@@ -83,6 +83,8 @@ func main() {
 		mux.Handle("POST /auth/login", auth)
 		mux.Handle("POST /auth/logout", auth)
 		mux.Handle("GET /me", auth)
+		mux.Handle("POST /stores", auth)
+		mux.Handle("GET /stores/{store}", auth)
 	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

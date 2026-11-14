@@ -31,7 +31,7 @@ for (const width of [360, 1280]) test(`login and logout with real session at ${w
   const cookie = (await page.context().cookies()).find(c => c.name === "shop_session")!;
   expect(cookie.httpOnly).toBe(true); expect(cookie.sameSite).toBe("Lax");
   await page.reload();
-  await expect(page.getByRole("heading", { name: "فروشگاه‌های شما" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "ساخت فروشگاه", exact: true })).toBeVisible();
   const me = await page.request.get("/api/me"); expect(me.status()).toBe(200);
   expect((await page.request.post("/api/auth/logout", { headers: { Origin: new URL(page.url()).origin }, data: {} })).status()).toBe(403);
   await page.getByRole("button", { name: "خروج", exact: true }).click();

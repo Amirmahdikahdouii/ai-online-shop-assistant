@@ -191,7 +191,20 @@ func (a *Auth) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/me" && r.Method == "GET" {
-		reply(200, map[string]any{"user": map[string]string{"id": userID, "username": name}, "stores": []any{}, "csrfToken": csrf})
+		stores, err := a.stores(r.Context(), userID)
+		if err != nil {
+			fail(503, "store_unavailable")
+			return
+		}
+		reply(200, map[string]any{"user": map[string]string{"id": userID, "username": name}, "stores": stores, "csrfToken": csrf})
+		return
+	}
+	if r.URL.Path == "/stores" || strings.HasPrefix(r.URL.Path, "/stores/") {
+		if r.Method == "POST" && subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(csrf)) != 1 {
+			fail(403, "csrf_rejected")
+			return
+		}
+		a.storeRequest(w, r, userID, reply, fail)
 		return
 	}
 	fail(404, "not_found")

@@ -76,7 +76,7 @@ session work; the current Compose deployment publishes web only on loopback.
 
 `POST /api/auth/login`, `POST /api/auth/logout` and `GET /api/me` proxy to
 private Go endpoints. `/me` returns the current user's ID/username, a CSRF token,
-and an empty store list until store membership is implemented; it never returns
+and session-scoped store memberships; it never returns
 password hashes or session tokens. `/dashboard` is validated against PostgreSQL
 on every server request. Only `/dashboard` paths may be resumed after login.
 
@@ -95,6 +95,24 @@ Two concurrent hashes per API process bound memory. These intentionally conserva
 limits can throttle legitimate users under attack; add trusted edge IP controls
 before public deployment. Expired attempt/session rows are cleaned on login.
 No password recovery or operator reset is provided.
+
+## Store onboarding (TK-04)
+
+Signed-in accounts create their store at `/dashboard`. `POST /api/stores`
+requires the session, exact origin and CSRF token. Store and manager membership
+commit in one PostgreSQL transaction. Database uniqueness rejects a second store
+per user or second manager per store; failed/repeated creates leave no orphan.
+User and Store have independently generated opaque IDs. Connection is separate:
+no connection record or provider credential is fabricated during onboarding.
+
+`GET /api/me` lists only the session user's store. `GET /api/stores/{id}` returns
+404 for both nonexistent and other accounts' stores. Client-supplied store IDs
+never grant access. The dashboard has orders, customers, products, attention and
+connection routes, collapsible mobile navigation and empty states without fake
+counters. Connection settings explicitly report that provider integration is
+not implemented yet; empty-state actions navigate there, not to fake operations.
+
+See [TK-04 validation](docs/tk-04-validation.md) for evidence and boundaries.
 
 ## Test commands
 

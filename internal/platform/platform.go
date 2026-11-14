@@ -22,6 +22,9 @@ var identitySchema string
 //go:embed sessions.sql
 var sessionSchema string
 
+//go:embed stores.sql
+var storeSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -98,6 +101,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, sessionSchema); err != nil {
 			return err
 		}
+		version = 3
+	}
+	if version == 3 {
+		if err = validateVersion(ctx, tx, 3); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, storeSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -110,7 +122,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 3)
+	return validateVersion(ctx, db, 4)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -155,6 +167,20 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid session schema")
+		}
+	}
+	if expected >= 4 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=6 FROM information_schema.columns WHERE table_schema='shops' AND ((table_name='stores' AND ((column_name IN ('id','name') AND data_type='text') OR (column_name='created_at' AND data_type='timestamp with time zone'))) OR (table_name='memberships' AND column_name IN ('user_id','store_id','role') AND data_type='text'))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid store schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT count(*)=2 FROM pg_constraint WHERE conrelid='shops.memberships'::regclass AND ((contype='p' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='shops.memberships'::regclass AND attname='user_id')]::smallint[]) OR (contype='u' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='shops.memberships'::regclass AND attname='store_id')]::smallint[]))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid membership uniqueness")
 		}
 	}
 	return nil
