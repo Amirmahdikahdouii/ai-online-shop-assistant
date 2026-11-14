@@ -1,0 +1,95 @@
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+	"shopassistant/internal/platform"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		client := http.Client{Timeout: 4 * time.Second}
+		r, err := client.Get("http://127.0.0.1:8080/readyz")
+		if err != nil {
+			os.Exit(1)
+		}
+		defer r.Body.Close()
+		if r.StatusCode != 200 {
+			os.Exit(1)
+		}
+		return
+	}
+	config, err := platform.LoadConfig()
+	if err != nil {
+		slog.Error("configuration rejected")
+		os.Exit(1)
+	}
+	role := os.Getenv("SERVICE_ROLE")
+	if role != "api" && role != "worker" {
+		slog.Error("invalid service role")
+		os.Exit(1)
+	}
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
+	defer stop()
+	pool, err := pgxpool.NewWithConfig(ctx, config.DB)
+	if err != nil {
+		slog.Error("database configuration rejected")
+		os.Exit(1)
+	}
+	defer pool.Close()
+	go func() {
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
+			err := platform.Migrate(attempt, pool)
+			if err == nil && role == "worker" {
+				err = platform.Beat(attempt, pool)
+			}
+			cancel()
+			if err != nil {
+				slog.Warn("storage preparation failed", "role", role)
+			}
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+		}
+	}()
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
+		started := time.Now()
+		check, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+		defer cancel()
+		h := platform.Check(check, pool, config.Mode)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Request-ID", h.RequestID)
+		if h.Status != "ready" {
+			w.WriteHeader(503)
+		}
+		json.NewEncoder(w).Encode(h)
+		slog.Info("readiness", "request_id", h.RequestID, "result", h.Status, "duration_ms", time.Since(started).Milliseconds())
+	})
+	server := http.Server{Addr: ":8080", Handler: mux, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second, IdleTimeout: 30 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdown, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		server.Shutdown(shutdown)
+	}()
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		slog.Error("server failed")
+		os.Exit(1)
+	}
+}

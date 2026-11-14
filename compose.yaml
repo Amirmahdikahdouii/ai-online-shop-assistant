@@ -1,0 +1,61 @@
+name: ${COMPOSE_PROJECT_NAME:?Set a separate project name for each environment}
+x-backend: &backend
+  build: .
+  restart: unless-stopped
+  environment: &server-env
+    APP_MODE: ${APP_MODE:?Set demo or live}
+    POSTGRES_HOST: postgres
+    POSTGRES_DB: ${POSTGRES_DB:?Set shop_demo or shop_live}
+    POSTGRES_USER: shop
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a server-only database password}
+  depends_on:
+    postgres:
+      condition: service_healthy
+  healthcheck:
+    test: [CMD, /service, healthcheck]
+    interval: 5s
+    timeout: 5s
+    retries: 5
+    start_period: 10s
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U shop -d "$$POSTGRES_DB"']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+  api:
+    <<: *backend
+    environment:
+      <<: *server-env
+      SERVICE_ROLE: api
+  worker:
+    <<: *backend
+    environment:
+      <<: *server-env
+      SERVICE_ROLE: worker
+  web:
+    build: ./web
+    restart: unless-stopped
+    environment:
+      API_URL: http://api:8080
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_started
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3000/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+volumes:
+  postgres-data:

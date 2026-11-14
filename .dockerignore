@@ -1,0 +1,7 @@
+.git
+.agents
+web
+node_modules
+secrets
+.env*
+test-results
