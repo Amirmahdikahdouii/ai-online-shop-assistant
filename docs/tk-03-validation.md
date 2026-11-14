@@ -35,6 +35,8 @@ The existing design is intentionally reused, not replaced with a new auth theme.
 - `go vet ./...`: passed.
 - `npm --prefix web run typecheck`: passed.
 - Production Next.js and Go Docker builds: passed.
+- Final `HEALTH_BASE_URL=http://127.0.0.1:3200 bash scripts/smoke.sh`:
+  **12 passed (1.1 minutes)**, including all existing regression tests.
 
 Browser regressions cover 360px/1280px login, invalid credentials, password
 visibility, same-origin CSRF rejection, session persistence across reload, logout,
