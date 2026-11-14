@@ -62,3 +62,30 @@ func TestMembershipConstraintDamage(t *testing.T) {
 		t.Fatal("damaged manager uniqueness must fail schema validation")
 	}
 }
+
+func TestProcessingDedupeConstraintDamage(t *testing.T) {
+	url := os.Getenv("REGISTRATION_TEST_DATABASE_URL")
+	if url == "" {
+		t.Skip("requires dedicated real PostgreSQL database")
+	}
+	ctx := context.Background()
+	pool, err := pgxpool.New(ctx, url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Close()
+	if err := Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "ALTER TABLE processing.events DROP CONSTRAINT events_connection_id_external_id_key"); err != nil {
+		t.Fatal(err)
+	}
+	if err := validate(ctx, tx); err == nil {
+		t.Fatal("damaged inbound dedupe must fail validation")
+	}
+}

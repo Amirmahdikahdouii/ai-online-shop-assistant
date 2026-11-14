@@ -28,6 +28,9 @@ var storeSchema string
 //go:embed connections.sql
 var connectionSchema string
 
+//go:embed processing.sql
+var processingSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -122,6 +125,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, connectionSchema); err != nil {
 			return err
 		}
+		version = 5
+	}
+	if version == 5 {
+		if err = validateVersion(ctx, tx, 5); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, processingSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -134,7 +146,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 5)
+	return validateVersion(ctx, db, 6)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -207,6 +219,22 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid active page uniqueness")
+		}
+	}
+	if expected >= 6 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=15 FROM information_schema.columns WHERE table_schema='processing' AND (
+		(table_name='events' AND ((column_name IN ('id','store_id','connection_id','external_id','speaker','scenario') AND data_type='text') OR (column_name IN ('occurred_at','received_at') AND data_type='timestamp with time zone'))) OR
+		(table_name='jobs' AND ((column_name IN ('event_id','status','lease_token','reason') AND data_type='text') OR (column_name='attempts' AND data_type='integer') OR (column_name IN ('available_at','lease_until') AND data_type='timestamp with time zone'))))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid processing schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='processing.events'::regclass AND conname='events_connection_id_external_id_key' AND contype='u' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='processing.events'::regclass AND attname='connection_id'),(SELECT attnum FROM pg_attribute WHERE attrelid='processing.events'::regclass AND attname='external_id')]::smallint[]) AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='processing.jobs'::regclass AND conname='jobs_pkey' AND contype='p')`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid processing uniqueness")
 		}
 	}
 	return nil

@@ -43,3 +43,16 @@
   .setup-panel { margin: 28px 0; padding: 24px 20px; }
   .empty-work { min-height: 360px; padding: 32px 20px; }
 }
+.message-ledger { max-width: 850px; }
+.message-ledger p { line-height: 1.9; }
+.sample-controls { border-block: 1px solid #cbd5e1; padding-block: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.sample-controls p { flex-basis: 100%; margin: 0; }
+.message-ledger .sample-controls p { max-width: none; }
+.message-list { list-style: none; padding: 0; }
+.message-list li { padding: 22px 0; border-bottom: 1px solid #cbd5e1; }
+.message-list li > div { display: flex; flex-wrap: wrap; gap: 18px; color: #475569; margin-bottom: 12px; }
+.message-list p { margin-block: 10px; }
+.message-status { display: inline-block; border-inline-start: 4px solid; padding-inline: 10px; }
+.message-status.pending, .message-status.processing { color: #854d0e; }
+.message-status.succeeded { color: #166534; }
+.message-status.failed { color: #991b1b; }

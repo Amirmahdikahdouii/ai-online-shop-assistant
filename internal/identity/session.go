@@ -18,6 +18,7 @@ import (
 	"golang.org/x/text/unicode/norm"
 	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
+	"shopassistant/internal/processing"
 )
 
 func normalizeUsername(s string) string {
@@ -28,11 +29,12 @@ func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeT
 
 // Auth owns sessions independently of any store or external connection.
 type Auth struct {
-	Pool      *pgxpool.Pool
-	Origin    string
-	Secure    bool
-	slots     chan struct{}
-	Instagram instagram.Adapter
+	Pool       *pgxpool.Pool
+	Origin     string
+	Secure     bool
+	slots      chan struct{}
+	Instagram  instagram.Adapter
+	Processing *processing.Service
 }
 
 func NewAuth(pool *pgxpool.Pool, origin string, secure bool) *Auth {

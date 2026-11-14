@@ -39,6 +39,10 @@ func (a *Auth) stores(ctx context.Context, userID string) ([]Store, error) {
 
 func (a *Auth) storeRequest(w http.ResponseWriter, r *http.Request, userID string, reply func(int, map[string]any), fail func(int, string)) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
+	if len(parts) == 2 && (parts[1] == "processing" || parts[1] == "sample-events") {
+		a.processingRequest(w, r, userID, parts[0], reply, fail)
+		return
+	}
 	if len(parts) == 3 && parts[1] == "connection" {
 		a.connectionRequest(w, r, userID, parts[0], parts[2], reply, fail)
 		return

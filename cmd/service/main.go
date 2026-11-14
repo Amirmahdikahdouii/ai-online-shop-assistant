@@ -15,6 +15,7 @@ import (
 	"shopassistant/internal/identity"
 	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
+	"shopassistant/internal/processing"
 )
 
 func main() {
@@ -48,6 +49,25 @@ func main() {
 		os.Exit(1)
 	}
 	defer pool.Close()
+	queue := processing.PostgresQueue{Pool: pool}
+	if role == "worker" {
+		go func() {
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					attempt, cancel := context.WithTimeout(ctx, 3*time.Second)
+					if err := processing.ProcessOne(attempt, queue); err != nil {
+						slog.Warn("processing attempt unavailable")
+					}
+					cancel()
+				}
+			}
+		}()
+	}
 	go func() {
 		ticker := time.NewTicker(2 * time.Second)
 		defer ticker.Stop()
@@ -81,6 +101,7 @@ func main() {
 			os.Exit(1)
 		}
 		auth := identity.NewAuth(pool, origin, config.Mode == "live")
+		auth.Processing = &processing.Service{Pool: pool, Queue: queue}
 		if config.Mode == "demo" {
 			auth.Instagram = instagram.Fake{}
 		}
@@ -91,6 +112,8 @@ func main() {
 		mux.Handle("GET /stores/{store}", auth)
 		mux.Handle("POST /stores/{store}/connection/{action}", auth)
 		mux.Handle("GET /stores/{store}/connection/status", auth)
+		mux.Handle("GET /stores/{store}/processing", auth)
+		mux.Handle("POST /stores/{store}/sample-events", auth)
 	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

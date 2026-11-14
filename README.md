@@ -1,6 +1,6 @@
 # Shop assistant · دستیار فروشگاه
 
-Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. Accounts register at `/register`, sign in at `/login`, and access the protected `/dashboard`. Demo supports a simulated Instagram page connection; real external integrations and message scenarios are not implemented yet.
+Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. Accounts register at `/register`, sign in at `/login`, and access the protected `/dashboard`. Demo supports simulated Instagram connection and durable sample-message processing; real external integrations are not implemented yet.
 
 ## Run the isolated demo
 
@@ -52,8 +52,8 @@ Only a fake Instagram adapter exists; neither mode calls external providers. Dem
 - `GET /readyz` (internal API/worker): 200 only after schema validation, committed isolated write/read probe and a worker heartbeat within 10 seconds; otherwise 503. JSON includes `status`, `mode`, `api`, `database`, `worker`, `probeId`, `checks`, `requestId`. A responding API can be `ready` while the overall system is not ready.
 - `GET /api/health` (web): same-origin, uncached server proxy. API unavailability becomes 503 with unknown dependency states; no fabricated healthy fallback.
 - The UI checks initially and on explicit retry; its timestamp is the last check, not a continuously refreshed monitor. A stopped worker can remain ready for at most the 10-second heartbeat grace period.
-- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema creation and additive version 1 → 2 → 3 → 4 → 5 account/session/store/connection migrations are atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
-- Worker has no business jobs yet: its real duty here is database/schema verification and a heartbeat every 2 seconds. This is not a job-queue implementation.
+- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema creation and additive version 1 → 2 → 3 → 4 → 5 → 6 account/session/store/connection/processing migrations are atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
+- Worker maintains a heartbeat every 2 seconds and claims durable sample jobs every 500ms. It does not call AI or create CRM records yet.
 
 ## Registration (TK-02)
 
@@ -127,7 +127,37 @@ are unique across stores; reconnect fails if another store currently uses that p
 Reconnect preserves connection/account/page IDs and the original receiving start;
 different-page replacement is rejected. Disconnect only changes connection status
 and callback state, never sessions or CRM data. Live mode has no configured adapter.
-Message ingestion, historical imports and real OAuth/webhooks remain later tickets.
+Historical imports and real OAuth/webhooks remain later tickets.
+
+## Durable sample-message processing (TK-06)
+
+After connecting a demo page, open `/dashboard/processing`. The light Persian RTL
+ledger shows the latest 100 committed events, newest first, with receive time,
+trusted speaker role, pending/processing/success/failure, short safe reason and
+attempt count. It refreshes from PostgreSQL every two seconds; errors retain the
+last snapshot with a visible warning. No message bodies or credentials are logged.
+
+- `GET /api/stores/{store}/processing` proxies the session/membership-protected
+  private API; it works without a configured provider and exposes no raw payload.
+- `POST /api/stores/{store}/sample-events` is demo-only, session/membership,
+  origin and CSRF protected. JSON is `{ "scenario": "message", "key": "opaque-run-key" }`.
+  Fixed fixtures are `message`, `failure`, `old`, and `shop`; arbitrary speaker
+  metadata is rejected. Reuse the same key **and scenario** for safe replay.
+  The repeat button resends the exact last key and scenario together.
+- Acceptance returns `accepted` only after event and enqueue commit together;
+  `duplicate` creates no second event/job and `ignored` means pre-connection history.
+  Missing/disconnected connection returns 409; unavailable storage returns 503.
+  Success means durable receipt, not successful background processing.
+- PostgreSQL queue is injected through enqueue/claim/ack/retry. Claims use
+  `SKIP LOCKED`, 30-second leases and fresh fencing tokens. After worker loss,
+  expired jobs are reclaimed; stale acknowledgements cannot overwrite newer work.
+  Controlled failures retry after two seconds, at most three completed attempts.
+  This is at-least-once work delivery, not a guarantee for future external effects.
+- This slice stores normalized fixture metadata, not customer message content.
+  Speaker role is derived from trusted sender/page identity, never message text.
+  Live sample mutations fail closed; no invented webhook/signature contract is
+  exposed. Real provider normalization, AI, customers/orders and manual retry are
+  outside this ticket.
 
 ## Test commands
 
