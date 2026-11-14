@@ -39,6 +39,21 @@ func (a *Auth) stores(ctx context.Context, userID string) ([]Store, error) {
 
 func (a *Auth) storeRequest(w http.ResponseWriter, r *http.Request, userID string, reply func(int, map[string]any), fail func(int, string)) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
+	if len(parts) == 2 && (parts[1] == "posts" || parts[1] == "post-selections") {
+		a.postsRequest(w, r, userID, parts[0], parts[1], reply, fail)
+		return
+	}
+	if len(parts) >= 2 && len(parts) <= 4 && parts[1] == "products" {
+		id, action := "", ""
+		if len(parts) >= 3 {
+			id = parts[2]
+		}
+		if len(parts) == 4 {
+			action = parts[3]
+		}
+		a.catalogRequest(w, r, userID, parts[0], id, action, reply, fail)
+		return
+	}
 	if len(parts) == 2 && (parts[1] == "processing" || parts[1] == "sample-events") {
 		a.processingRequest(w, r, userID, parts[0], reply, fail)
 		return

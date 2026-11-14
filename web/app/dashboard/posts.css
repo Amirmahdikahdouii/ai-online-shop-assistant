@@ -1,0 +1,20 @@
+.post-browser { margin-block: 2rem; border-top: 2px solid #d9e3ed; padding-top: 1.5rem; }
+.post-browser header p { max-width: 65ch; }
+.post-browser > header { display: block; }
+.post-browser > header h2 { margin-block: 0 .75rem; }
+.post-browser small, .post-copy time { color: #4f6279; }
+.post-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-block: 1.5rem; }
+.post-card { border: 1px solid #cbd8e5; border-radius: 10px; overflow: hidden; background: #fff; }
+.post-caption-preview { background: #e9f0f8; color: #243f60; min-height: 7rem; display: flex; align-items: center; padding: 1.5rem; font-size: 1.2rem; font-weight: 700; }
+.post-copy { padding: 1rem; }
+.post-copy p { line-height: 1.9; }
+.post-copy label { display: flex; align-items: center; gap: .7rem; min-height: 44px; cursor: pointer; font-weight: 600; }
+.post-copy input { width: 22px; height: 22px; accent-color: #2355a5; }
+.post-state, .post-success { background: #edf7ef; color: #215c38; padding: .6rem; border: 1px solid #a7cdb3; border-radius: 6px; }
+.post-actions { position: sticky; bottom: .5rem; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; background: #fff; border: 1px solid #9fb4cc; padding: 1rem; border-radius: 10px; }
+.post-browser button { min-height: 44px; }
+.post-browser :focus-visible { outline: 3px solid #2355a5; outline-offset: 3px; }
+.post-pagination { display: flex; flex-wrap: wrap; gap: .6rem; margin-top: 1rem; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; }
+@media (max-width: 1000px) { .post-grid { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+@media (max-width: 600px) { .post-grid { grid-template-columns: 1fr; } .post-actions button { width: 100%; } }

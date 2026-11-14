@@ -56,3 +56,26 @@
 .message-status.pending, .message-status.processing { color: #854d0e; }
 .message-status.succeeded { color: #166534; }
 .message-status.failed { color: #991b1b; }
+.catalog { margin-top: 24px; }
+.catalog-toolbar, .catalog-title, .catalog-actions, .catalog-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; margin-block: 20px; }
+.catalog-toolbar { justify-content: space-between; }
+.catalog label { display: grid; gap: 8px; min-width: 0; }
+.catalog input, .catalog select { width: 100%; min-width: 0; padding: 10px; border: 1px solid #8190a5; border-radius: 5px; background: white; color: var(--ink); font: inherit; }
+.catalog button { font: inherit; cursor: pointer; }
+.catalog button:disabled { cursor: default; opacity: .6; }
+.catalog-editor { background: white; border: 1px solid var(--line); padding: 24px; border-radius: 10px; }
+.catalog-editor h2 { margin-top: 0; }
+.catalog-editor form > fieldset { border: 0; padding: 0; min-width: 0; }
+.catalog-variant { margin-block: 24px; border: 1px solid var(--line); border-radius: 6px; padding: 18px; min-width: 0; }
+.catalog-fields { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 18px; }
+.catalog label.catalog-check { display: flex; align-items: center; }
+.catalog-check input { width: auto; }
+.catalog-attribute { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1fr) auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+.catalog-list, .catalog-list ul { list-style: none; padding: 0; }
+.catalog-list > li { background: white; padding: 20px 24px; border: 1px solid var(--line); border-radius: 10px; margin-block: 16px; overflow-wrap: anywhere; }
+.catalog-title h2 { font-size: 20px; margin: 0; }
+.catalog-title button { margin-inline-start: auto; }
+.catalog-list ul li { display: flex; flex-wrap: wrap; gap: 16px; padding-block: 12px; border-top: 1px solid var(--line); }
+.catalog-price { color: #475569; margin-inline-start: auto; }
+.catalog details { overflow-wrap: anywhere; line-height: 1.9; }
+@media (max-width:700px) { .catalog-fields, .catalog-attribute { grid-template-columns: minmax(0,1fr); } .catalog-editor { padding: 18px; } .catalog-variant { padding: 12px; } .catalog-filters label { width: 100%; } }

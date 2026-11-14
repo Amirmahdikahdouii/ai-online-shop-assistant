@@ -12,6 +12,7 @@ export function safeNext(value: string | null): string {
 export async function authProxy(request: Request, path: string) {
   const fail = (status: number, code: string) => Response.json({ code, fieldErrors: null, requestId: crypto.randomUUID() }, { status, headers: { "Cache-Control": "no-store" } });
   const origin = process.env.APP_ORIGIN || "http://localhost:3000";
+  const bodyLimit = /^\/stores\/[^/]+\/products(?:\/|$)/.test(path) ? 2 * 1024 * 1024 : 4096;
   if (request.method === "POST" && (request.headers.get("origin") !== origin || request.headers.get("sec-fetch-site") === "cross-site")) return fail(403, "origin_rejected");
   try {
     let body: Buffer<ArrayBuffer> | undefined;
@@ -21,7 +22,7 @@ export async function authProxy(request: Request, path: string) {
       if (reader) while (true) {
         const { value, done } = await reader.read(); if (done) break;
         size += value.length;
-        if (size > 4096) { await reader.cancel(); return fail(413, "body_too_large"); }
+        if (size > bodyLimit) { await reader.cancel(); return fail(413, "body_too_large"); }
         chunks.push(value);
       }
       body = Buffer.concat(chunks);

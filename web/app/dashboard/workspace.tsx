@@ -6,6 +6,8 @@ import "./workspace.css";
 import { sections, type Section } from "./sections";
 import ConnectionSettings from "./connection";
 import Processing from "./processing";
+import Catalog from "./catalog";
+import Posts from "./posts";
 type Me = { user: { username: string }; stores: { id: string; name: string }[]; csrfToken: string };
 
 export default function Dashboard({ section }: { section: Section }) {
@@ -74,7 +76,7 @@ export default function Dashboard({ section }: { section: Section }) {
         <form onSubmit={create}><label htmlFor="store-name">نام فروشگاه</label><input autoComplete="organization" id="store-name" name="name" required maxLength={80} value={name} onChange={e => setName(e.target.value)} disabled={busy} aria-describedby="store-help" /><p id="store-help">برای نمونه: پوشاک نارون</p><button className="shop-action" disabled={busy || !name.trim()}>{busy ? "در حال ساخت فروشگاه…" : "ساخت فروشگاه"}</button></form>
       </section> : <>
         {created && <p role="status" className="shop-success">فروشگاه «{store.name}» ساخته شد. شما مدیر این فروشگاه هستید.</p>}
-        {section === "processing" ? <Processing store={store.id} csrf={me.csrfToken} /> : section === "connection" ? <ConnectionSettings store={store.id} csrf={me.csrfToken} /> : <section className="empty-work"><div className="empty-mark" aria-hidden="true">▤</div><h2>{content.empty}</h2><p>{content.description}</p>
+        {section === "products" ? <><Posts store={store.id} csrf={me.csrfToken} /><Catalog store={store.id} csrf={me.csrfToken} /></> : section === "processing" ? <Processing store={store.id} csrf={me.csrfToken} /> : section === "connection" ? <ConnectionSettings store={store.id} csrf={me.csrfToken} /> : <section className="empty-work"><div className="empty-mark" aria-hidden="true">▤</div><h2>{content.empty}</h2><p>{content.description}</p>
           <Link className="shop-action" href="/dashboard/connection">رفتن به تنظیمات اتصال</Link>
         </section>}
       </>}

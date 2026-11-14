@@ -31,6 +31,12 @@ var connectionSchema string
 //go:embed processing.sql
 var processingSchema string
 
+//go:embed catalog.sql
+var catalogSchema string
+
+//go:embed posts.sql
+var postsSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -134,6 +140,24 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, processingSchema); err != nil {
 			return err
 		}
+		version = 6
+	}
+	if version == 6 {
+		if err = validateVersion(ctx, tx, 6); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, catalogSchema); err != nil {
+			return err
+		}
+		version = 7
+	}
+	if version == 7 {
+		if err = validateVersion(ctx, tx, 7); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, postsSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -146,7 +170,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 6)
+	return validateVersion(ctx, db, 8)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -235,6 +259,34 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid processing uniqueness")
+		}
+	}
+	if expected >= 7 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=16 FROM information_schema.columns WHERE table_schema='catalog' AND ((table_name='products' AND column_name IN ('id','store_id','name','status','revision','variants','updated_at')) OR (table_name='codes' AND column_name IN ('store_id','code','product_id','variant_id')) OR (table_name='history' AND column_name IN ('product_id','revision','actor_id','changed_at','snapshot')))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid catalog schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.codes'::regclass AND contype='p' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='catalog.codes'::regclass AND attname='store_id'),(SELECT attnum FROM pg_attribute WHERE attrelid='catalog.codes'::regclass AND attname='code')]::smallint[]) AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.history'::regclass AND contype='p')`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid catalog uniqueness")
+		}
+	}
+	if expected >= 8 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=14 FROM information_schema.columns WHERE table_schema='catalog' AND ((table_name='post_selections' AND column_name IN ('id','store_id','connection_id','post_id','caption','published_at','selected_at','actor_id','status')) OR (table_name='post_selection_requests' AND column_name IN ('store_id','user_id','request_key','body_hash','result')))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid post selection schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.post_selections'::regclass AND contype='u') AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.post_selection_requests'::regclass AND contype='p')`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid post selection uniqueness")
 		}
 	}
 	return nil

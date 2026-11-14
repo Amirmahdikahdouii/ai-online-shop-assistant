@@ -114,6 +114,14 @@ func main() {
 		mux.Handle("GET /stores/{store}/connection/status", auth)
 		mux.Handle("GET /stores/{store}/processing", auth)
 		mux.Handle("POST /stores/{store}/sample-events", auth)
+		mux.Handle("GET /stores/{store}/posts", auth)
+		mux.Handle("GET /stores/{store}/post-selections", auth)
+		mux.Handle("POST /stores/{store}/post-selections", auth)
+		mux.Handle("GET /stores/{store}/products", auth)
+		mux.Handle("POST /stores/{store}/products", auth)
+		mux.Handle("GET /stores/{store}/products/{product}", auth)
+		mux.Handle("POST /stores/{store}/products/{product}", auth)
+		mux.Handle("POST /stores/{store}/products/{product}/{action}", auth)
 	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
