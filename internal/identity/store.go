@@ -10,6 +10,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"shopassistant/internal/platform"
 )
@@ -37,6 +38,11 @@ func (a *Auth) stores(ctx context.Context, userID string) ([]Store, error) {
 }
 
 func (a *Auth) storeRequest(w http.ResponseWriter, r *http.Request, userID string, reply func(int, map[string]any), fail func(int, string)) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
+	if len(parts) == 3 && parts[1] == "connection" {
+		a.connectionRequest(w, r, userID, parts[0], parts[2], reply, fail)
+		return
+	}
 	if r.Method == "GET" {
 		stores, err := a.stores(r.Context(), userID)
 		if err != nil {
@@ -45,7 +51,17 @@ func (a *Auth) storeRequest(w http.ResponseWriter, r *http.Request, userID strin
 		}
 		for _, s := range stores {
 			if r.URL.Path == "/stores/"+s.ID {
-				reply(200, map[string]any{"store": s, "connection": nil})
+				var c Connection
+				err := a.Pool.QueryRow(r.Context(), `SELECT id,provider,account_id,page_id,status,receiving_since FROM instagram.connections WHERE store_id=$1`, s.ID).Scan(&c.ID, &c.Provider, &c.AccountID, &c.PageID, &c.Status, &c.ReceivingSince)
+				if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+					fail(503, "connection_unavailable")
+					return
+				}
+				var connection *Connection
+				if err == nil {
+					connection = &c
+				}
+				reply(200, map[string]any{"store": s, "connection": connection})
 				return
 			}
 		}

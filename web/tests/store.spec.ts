@@ -47,7 +47,7 @@ for (const width of [360, 1280]) test(`independent stores, API authorization and
         await expect(page.locator(".empty-work")).toBeVisible();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
       }
-      await expect(page.locator(".empty-work")).toContainText("اتصال پیج هنوز در این نسخه فعال نیست");
+      await expect(page.locator(".empty-work")).toContainText("محیط شبیه‌سازی‌شده");
       await page.screenshot({ path: `test-results/store-connection-${width}-${i}.png`, fullPage: true });
     }
     expect(storeIDs[0]).not.toBe(storeIDs[1]);

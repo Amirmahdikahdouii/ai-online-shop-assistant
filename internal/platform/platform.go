@@ -25,6 +25,9 @@ var sessionSchema string
 //go:embed stores.sql
 var storeSchema string
 
+//go:embed connections.sql
+var connectionSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -110,6 +113,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, storeSchema); err != nil {
 			return err
 		}
+		version = 4
+	}
+	if version == 4 {
+		if err = validateVersion(ctx, tx, 4); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, connectionSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -122,7 +134,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 4)
+	return validateVersion(ctx, db, 5)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -181,6 +193,20 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid membership uniqueness")
+		}
+	}
+	if expected >= 5 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=12 FROM information_schema.columns WHERE table_schema='instagram' AND ((table_name='connections' AND ((column_name IN ('id','store_id','provider','account_id','page_id','status') AND data_type='text') OR (column_name='receiving_since' AND data_type='timestamp with time zone'))) OR (table_name='connection_attempts' AND ((column_name IN ('state_hash','store_id','user_id') AND data_type='text') OR (column_name='expires_at' AND data_type='timestamp with time zone') OR (column_name='completed' AND data_type='boolean'))))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid connection schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_index i JOIN pg_class c ON c.oid=i.indexrelid WHERE i.indrelid='instagram.connections'::regclass AND c.relname='connections_active_page' AND i.indisunique AND i.indisvalid AND pg_get_expr(i.indpred,i.indrelid)='(status = ''connected''::text)')`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid active page uniqueness")
 		}
 	}
 	return nil

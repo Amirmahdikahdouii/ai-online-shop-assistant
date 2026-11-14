@@ -1,6 +1,6 @@
 # Shop assistant · دستیار فروشگاه
 
-Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. Accounts register at `/register`, sign in at `/login`, and access the protected `/dashboard`. External integrations and demo scenarios are not implemented yet.
+Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. Accounts register at `/register`, sign in at `/login`, and access the protected `/dashboard`. Demo supports a simulated Instagram page connection; real external integrations and message scenarios are not implemented yet.
 
 ## Run the isolated demo
 
@@ -44,7 +44,7 @@ The example contains no real secrets. Do not reuse the demo password. Keep `APP_
 
 Only web is published, on loopback. PostgreSQL/API/worker have no host ports. All demo/live networks and volumes are project-scoped. The browser receives no credential or internal connection URL. Go logs only safe readiness/request IDs, result and duration, never raw database errors/DSNs. Compose configuration and container inspection contain the database credential: restrict access to the Docker daemon and env file. Do not publish `docker compose config` output.
 
-No integration adapter exists in this slice, so neither mode calls external providers. Demo has no live fallback. This is **not a production release or a passed live gate**: public HTTPS termination, authenticated integrations, store authorization and backup/restore validation remain deployment/later-ticket work. Do not store valuable live customer data yet.
+Only a fake Instagram adapter exists; neither mode calls external providers. Demo has no live fallback, and live connection mutations fail closed. This is **not a production release or a passed live gate**: public HTTPS termination, real provider integration and backup/restore validation remain deployment/later-ticket work. Do not store valuable live customer data yet.
 
 ## Health and migration contract
 
@@ -52,7 +52,7 @@ No integration adapter exists in this slice, so neither mode calls external prov
 - `GET /readyz` (internal API/worker): 200 only after schema validation, committed isolated write/read probe and a worker heartbeat within 10 seconds; otherwise 503. JSON includes `status`, `mode`, `api`, `database`, `worker`, `probeId`, `checks`, `requestId`. A responding API can be `ready` while the overall system is not ready.
 - `GET /api/health` (web): same-origin, uncached server proxy. API unavailability becomes 503 with unknown dependency states; no fabricated healthy fallback.
 - The UI checks initially and on explicit retry; its timestamp is the last check, not a continuously refreshed monitor. A stopped worker can remain ready for at most the 10-second heartbeat grace period.
-- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema creation and additive version 1 → 2 → 3 account/session migrations are atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
+- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema creation and additive version 1 → 2 → 3 → 4 → 5 account/session/store/connection migrations are atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
 - Worker has no business jobs yet: its real duty here is database/schema verification and a heartbeat every 2 seconds. This is not a job-queue implementation.
 
 ## Registration (TK-02)
@@ -109,10 +109,25 @@ no connection record or provider credential is fabricated during onboarding.
 404 for both nonexistent and other accounts' stores. Client-supplied store IDs
 never grant access. The dashboard has orders, customers, products, attention and
 connection routes, collapsible mobile navigation and empty states without fake
-counters. Connection settings explicitly report that provider integration is
-not implemented yet; empty-state actions navigate there, not to fake operations.
+counters. Empty-state actions navigate to connection settings.
 
 See [TK-04 validation](docs/tk-04-validation.md) for evidence and boundaries.
+
+## Simulated page connection (TK-05)
+
+In demo mode, `/dashboard/connection` explicitly labels the simulation and offers
+connect, disconnect and same-page reconnect. No real provider credentials are used.
+The same-origin `/api/stores/{store}/connection/status` GET and `start`, `callback`,
+`disconnect` POST routes require a session and store membership; POST additionally
+requires exact origin and CSRF. Start creates a hashed, user/store-scoped state with
+a ten-minute expiry. The fake callback accepts only fixed provider fixtures.
+Completed callback replay is harmless; disconnect invalidates outstanding states.
+One connection identity per store is retained permanently. Only connected pages
+are unique across stores; reconnect fails if another store currently uses that page.
+Reconnect preserves connection/account/page IDs and the original receiving start;
+different-page replacement is rejected. Disconnect only changes connection status
+and callback state, never sessions or CRM data. Live mode has no configured adapter.
+Message ingestion, historical imports and real OAuth/webhooks remain later tickets.
 
 ## Test commands
 

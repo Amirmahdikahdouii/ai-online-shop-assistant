@@ -16,6 +16,7 @@ import (
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/unicode/norm"
+	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
 )
 
@@ -27,14 +28,15 @@ func digest(s string) string { h := sha256.Sum256([]byte(s)); return hex.EncodeT
 
 // Auth owns sessions independently of any store or external connection.
 type Auth struct {
-	Pool   *pgxpool.Pool
-	Origin string
-	Secure bool
-	slots  chan struct{}
+	Pool      *pgxpool.Pool
+	Origin    string
+	Secure    bool
+	slots     chan struct{}
+	Instagram instagram.Adapter
 }
 
 func NewAuth(pool *pgxpool.Pool, origin string, secure bool) *Auth {
-	return &Auth{pool, origin, secure, make(chan struct{}, 2)}
+	return &Auth{Pool: pool, Origin: origin, Secure: secure, slots: make(chan struct{}, 2)}
 }
 
 func (a *Auth) cookie(w http.ResponseWriter, token string, age int) {

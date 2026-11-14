@@ -13,6 +13,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"shopassistant/internal/identity"
+	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
 )
 
@@ -80,11 +81,16 @@ func main() {
 			os.Exit(1)
 		}
 		auth := identity.NewAuth(pool, origin, config.Mode == "live")
+		if config.Mode == "demo" {
+			auth.Instagram = instagram.Fake{}
+		}
 		mux.Handle("POST /auth/login", auth)
 		mux.Handle("POST /auth/logout", auth)
 		mux.Handle("GET /me", auth)
 		mux.Handle("POST /stores", auth)
 		mux.Handle("GET /stores/{store}", auth)
+		mux.Handle("POST /stores/{store}/connection/{action}", auth)
+		mux.Handle("GET /stores/{store}/connection/status", auth)
 	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
