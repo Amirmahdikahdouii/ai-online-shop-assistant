@@ -1,0 +1,73 @@
+import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+import { safeNext } from "../lib/auth";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import path from "node:path";
+
+test("return paths reject external and auth destinations", () => {
+  for (const value of ["https://evil.example", "//evil.example", "/\\evil.example", "/login", "/dashboard/../../login", "/%2f%2fevil.example", "/dashboard%2f..%2f..%2flogin"]) expect(safeNext(value)).toBe("/dashboard");
+  expect(safeNext("/dashboard?filter=waiting")).toBe("/dashboard?filter=waiting");
+});
+
+for (const width of [360, 1280]) test(`login and logout with real session at ${width}px`, async ({ page, request }) => {
+  const name = `login_${randomUUID().replaceAll("-", "").slice(0, 12)}`;
+  const password = "a-safe-login-password-۱۴۰۵";
+  expect((await request.post("/api/auth/register", { data: { username: name, password } })).status()).toBe(201);
+  await page.setViewportSize({ width, height: 900 });
+  await page.goto("/dashboard?filter=waiting");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByLabel("نام کاربری", { exact: true }).fill(name);
+  await page.getByLabel("رمز عبور", { exact: true }).fill("wrong-password");
+  await page.getByRole("button", { name: "ورود", exact: true }).click();
+  await expect(page.locator("#login-error")).toContainText("نام کاربری یا رمز عبور درست نیست");
+  await page.getByLabel("رمز عبور", { exact: true }).fill(password);
+  await page.getByRole("button", { name: "نمایش رمز", exact: true }).click();
+  await expect(page.getByLabel("رمز عبور", { exact: true })).toHaveAttribute("type", "text");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.screenshot({ path: `test-results/login-${width}.png`, fullPage: true });
+  await page.getByRole("button", { name: "ورود", exact: true }).click();
+  await expect(page).toHaveURL(/\/dashboard\?filter=waiting$/);
+  const cookie = (await page.context().cookies()).find(c => c.name === "shop_session")!;
+  expect(cookie.httpOnly).toBe(true); expect(cookie.sameSite).toBe("Lax");
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "فروشگاه‌های شما" })).toBeVisible();
+  const me = await page.request.get("/api/me"); expect(me.status()).toBe(200);
+  expect((await page.request.post("/api/auth/logout", { headers: { Origin: new URL(page.url()).origin }, data: {} })).status()).toBe(403);
+  await page.getByRole("button", { name: "خروج", exact: true }).click();
+  await expect(page).toHaveURL(/\/login$/);
+  expect((await page.request.get("/api/me")).status()).toBe(401);
+  await page.goto("/dashboard"); await expect(page).toHaveURL(/\/login\?next=/);
+  await page.getByLabel("نام کاربری", { exact: true }).fill(name);
+  await page.getByLabel("رمز عبور", { exact: true }).fill(password);
+  await page.getByLabel("رمز عبور", { exact: true }).press("Enter");
+  await expect(page).toHaveURL(/\/dashboard$/);
+  const active = (await page.context().cookies()).find(c => c.name === "shop_session")!;
+  if (!process.env.SMOKE_PROJECT?.startsWith("shop-smoke")) throw new Error("requires isolated smoke project");
+  const hash = createHash("sha256").update(active.value).digest("hex");
+  execFileSync("docker", ["compose", "--env-file", "config/demo.env", "-p", process.env.SMOKE_PROJECT, "exec", "-T", "postgres", "psql", "-U", "shop", "-d", "shop_demo", "-c", `UPDATE identity.sessions SET expires_at=clock_timestamp()-interval '1 second' WHERE token_hash='${hash}'`], { cwd: path.resolve(__dirname, "../.."), env: { ...process.env, WEB_PORT: "3100" } });
+  await page.goto("/dashboard?filter=expired");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  expect((await page.request.get("/api/me")).status()).toBe(401);
+  await page.context().addCookies([{ name: "shop_session", value: "fabricated", url: new URL(page.url()).origin }]);
+  await page.goto("/dashboard?filter=forged");
+  await expect(page).toHaveURL(/\/login\?next=/);
+  expect(new URL(page.url()).searchParams.get("next")).toBe("/dashboard?filter=forged");
+});
+
+test("login loading prevents duplicate requests and offers network retry", async ({ page }) => {
+  let finish!: () => void;
+  const waiting = new Promise<void>(resolve => { finish = resolve; });
+  let requests = 0;
+  await page.route("**/api/auth/login", async route => { requests++; await waiting; await route.abort(); });
+  await page.goto("/login");
+  await page.getByLabel("نام کاربری", { exact: true }).fill("narvan.shop");
+  await page.getByLabel("رمز عبور", { exact: true }).fill("a-safe-password-123");
+  await page.getByRole("button", { name: "ورود", exact: true }).dblclick({ force: true });
+  await expect(page.locator('button[type="submit"]')).toBeDisabled();
+  await expect(page.locator("form")).toHaveAttribute("aria-busy", "true");
+  expect(requests).toBe(1); finish();
+  await expect(page.locator("#login-error")).toContainText("ارتباط برقرار نشد");
+  await expect(page.getByLabel("رمز عبور", { exact: true })).toHaveAttribute("aria-describedby", "login-error");
+  await expect(page.locator('button[type="submit"]')).toBeEnabled();
+});

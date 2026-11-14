@@ -87,7 +87,7 @@ test("loading prevents double submission; network and service failures never rep
   await page.locator("#username").fill(`retry_${suffix()}`);
   await page.locator("#password").fill(password);
   await page.getByRole("button", { name: "ساخت حساب", exact: true }).dblclick({ force: true });
-  await expect(page.getByRole("button")).toBeDisabled();
+  await expect(page.locator('button[type="submit"]')).toBeDisabled();
   await expect(page.locator("form")).toHaveAttribute("aria-busy", "true");
   await page.screenshot({ path: "test-results/register-loading.png", fullPage: true });
   expect(requests).toBe(1);
@@ -97,10 +97,10 @@ test("loading prevents double submission; network and service failures never rep
   await page.screenshot({ path: "test-results/register-network-error.png", fullPage: true });
   await page.unroute("**/api/auth/register");
   await page.route("**/api/auth/register", route => route.fulfill({ status: 503, json: { code: "registration_unavailable" } }));
-  await page.getByRole("button").click();
+  await page.getByRole("button", { name: "ساخت حساب", exact: true }).click();
   await expect(page.locator(".register-error")).toContainText("ثبت‌نام تأیید نشد");
   await expect(page.getByRole("heading", { name: "حساب شما ساخته شد" })).toHaveCount(0);
   await page.unroute("**/api/auth/register");
-  await page.getByRole("button").click();
+  await page.getByRole("button", { name: "ساخت حساب", exact: true }).click();
   await expect(page.getByRole("heading", { name: "حساب شما ساخته شد" })).toBeVisible();
 });

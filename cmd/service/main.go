@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"syscall"
@@ -69,6 +70,19 @@ func main() {
 	mux := http.NewServeMux()
 	if role == "api" {
 		mux.Handle("POST /auth/register", identity.RegisterHandler(pool))
+		origin := os.Getenv("APP_ORIGIN")
+		if origin == "" {
+			origin = "http://localhost:3000"
+		}
+		publicURL, err := url.Parse(origin)
+		if err != nil || publicURL.Host == "" || publicURL.User != nil || publicURL.RawQuery != "" || publicURL.Fragment != "" || publicURL.Path != "" || (publicURL.Scheme != "http" && publicURL.Scheme != "https") || (config.Mode == "live" && publicURL.Scheme != "https") {
+			slog.Error("APP_ORIGIN must be an exact origin; live requires HTTPS")
+			os.Exit(1)
+		}
+		auth := identity.NewAuth(pool, origin, config.Mode == "live")
+		mux.Handle("POST /auth/login", auth)
+		mux.Handle("POST /auth/logout", auth)
+		mux.Handle("GET /me", auth)
 	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {

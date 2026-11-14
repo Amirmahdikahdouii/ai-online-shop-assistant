@@ -8,6 +8,7 @@ export default function Register() {
   const [fields, setFields] = useState<Fields>({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [visible, setVisible] = useState(false);
   const [user, setUser] = useState("");
   const inFlight = useRef(false);
   const username = useRef<HTMLInputElement>(null);
@@ -49,7 +50,7 @@ export default function Register() {
           <h1 id="register-title" ref={confirmation} tabIndex={-1}>حساب شما ساخته شد</h1>
           <p>نام کاربری شما: <bdi className="registered-name">{user}</bdi></p>
           <p>نام کاربری و رمزتان را در جای امن نگه دارید. بازیابی رمز در این سرویس وجود ندارد.</p>
-          <p>ثبت‌نام انجام شد؛ ورود و راه‌اندازی فروشگاه در مرحلهٔ بعدی محصول اضافه می‌شود.</p>
+          <p>ثبت‌نام انجام شد. برای ادامه <a href="/login">وارد حساب خود شوید</a>.</p>
         </div> : <>
           <h1 id="register-title">حساب خود را بسازید</h1>
           <p className="register-lead">برای شروع، فقط یک نام کاربری و رمز عبور لازم دارید.</p>
@@ -62,7 +63,8 @@ export default function Register() {
             </div>
             <div className="register-field">
               <label htmlFor="password">رمز عبور</label>
-              <input ref={password} id="password" name="password" type="password" dir="ltr" autoComplete="new-password" maxLength={256} aria-invalid={!!fields.password} aria-describedby={`password-hint${fields.password ? " password-error" : ""}`} readOnly={busy} />
+            <input ref={password} id="password" name="password" type={visible ? "text" : "password"} dir="ltr" autoComplete="new-password" maxLength={256} aria-invalid={!!fields.password} aria-describedby={`password-hint${fields.password ? " password-error" : ""}`} readOnly={busy} />
+            <button type="button" className="password-toggle" aria-pressed={visible} aria-controls="password" onClick={() => setVisible(!visible)}>{visible ? "پنهان کردن رمز" : "نمایش رمز"}</button>
               <p id="password-hint">۱۲ تا ۱۲۸ نویسه. رمزی انتخاب کنید که در جای دیگری استفاده نکرده‌اید.</p>
               {fields.password && <p className="field-error" id="password-error">{fields.password}</p>}
             </div>

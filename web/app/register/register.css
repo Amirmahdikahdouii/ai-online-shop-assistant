@@ -12,6 +12,8 @@
 .register-field .field-error { color: #a52b32; }
 .password-notice { border-inline-start: 3px solid var(--line); padding-inline-start: 12px; margin-bottom: 24px; }
 .register-form button { width: 100%; min-height: 48px; }
+.register-form .password-toggle { width: auto; background: transparent; color: var(--blue); border: 0; padding: 8px 0; font-size: 14px; }
+.register-form .password-toggle:hover:not(:disabled) { background: transparent; color: #193a9f; text-decoration: underline; }
 .register-error { padding: 12px; background: #fff0f0; color: #a52b32; margin-bottom: 16px; border-radius: 8px; }
 .sending { font-size: 14px; margin-bottom: 12px; }
 .register-context { margin: 24px 0 0; border: 0; padding: 0; }

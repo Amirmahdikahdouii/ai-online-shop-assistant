@@ -19,6 +19,9 @@ var schema string
 //go:embed identity.sql
 var identitySchema string
 
+//go:embed sessions.sql
+var sessionSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -86,6 +89,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, identitySchema); err != nil {
 			return err
 		}
+		version = 2
+	}
+	if version == 2 {
+		if err = validateVersion(ctx, tx, 2); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, sessionSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -98,7 +110,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 2)
+	return validateVersion(ctx, db, 3)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -123,7 +135,7 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 	if !valid {
 		return errors.New("invalid schema")
 	}
-	if expected == 2 {
+	if expected >= 2 {
 		if err := db.QueryRow(ctx, `SELECT count(*) = 4 FROM information_schema.columns WHERE table_schema='identity' AND table_name='users' AND ((column_name IN ('id','username','password_hash') AND data_type='text') OR (column_name='created_at' AND data_type='timestamp with time zone'))`).Scan(&valid); err != nil {
 			return err
 		}
@@ -135,6 +147,14 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid identity uniqueness")
+		}
+	}
+	if expected >= 3 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=7 FROM information_schema.columns WHERE table_schema='identity' AND ((table_name='sessions' AND ((column_name IN ('token_hash','user_id','csrf_token') AND data_type='text') OR (column_name='expires_at' AND data_type='timestamp with time zone'))) OR (table_name='login_attempts' AND ((column_name='bucket' AND data_type='text') OR (column_name='attempts' AND data_type='integer') OR (column_name='expires_at' AND data_type='timestamp with time zone'))))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid session schema")
 		}
 	}
 	return nil

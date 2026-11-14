@@ -8,6 +8,7 @@ x-backend: &backend
     POSTGRES_DB: ${POSTGRES_DB:?Set shop_demo or shop_live}
     POSTGRES_USER: shop
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a server-only database password}
+    APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
   depends_on:
     postgres:
       condition: service_healthy
@@ -47,6 +48,7 @@ services:
     restart: unless-stopped
     environment:
       API_URL: http://api:8080
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
     ports:
       - '127.0.0.1:${WEB_PORT:-3000}:3000'
     depends_on:

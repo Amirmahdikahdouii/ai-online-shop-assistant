@@ -19,8 +19,6 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"golang.org/x/crypto/argon2"
-	"golang.org/x/text/cases"
-	"golang.org/x/text/unicode/norm"
 	"shopassistant/internal/platform"
 )
 
@@ -76,8 +74,7 @@ func RegisterHandler(pool *pgxpool.Pool) http.Handler {
 			}
 			return
 		}
-		username := cases.Fold().String(norm.NFKC.String(strings.TrimSpace(input.Username)))
-		username = strings.NewReplacer("ي", "ی", "ى", "ی", "ك", "ک").Replace(username)
+		username := normalizeUsername(input.Username)
 		fields := map[string]string{}
 		length := utf8.RuneCountInString(username)
 		valid, substantive := length >= 3 && length <= 32, false
