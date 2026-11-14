@@ -1,6 +1,6 @@
 # Shop assistant · دستیار فروشگاه
 
-TK-01 foundation: Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. No business data, external integrations, demo scenarios or authentication are implemented yet.
+Next.js web, Go API/worker, PostgreSQL 17. The Persian RTL start page reports real infrastructure readiness. TK-02 adds account registration at `/register`; login/sessions, external integrations and demo scenarios are not implemented yet.
 
 ## Run the isolated demo
 
@@ -51,10 +51,27 @@ No integration adapter exists in this slice, so neither mode calls external prov
 - `GET /readyz` (internal API/worker): 200 only after schema validation, committed isolated write/read probe and a worker heartbeat within 10 seconds; otherwise 503. JSON includes `status`, `mode`, `api`, `database`, `worker`, `probeId`, `checks`, `requestId`. A responding API can be `ready` while the overall system is not ready.
 - `GET /api/health` (web): same-origin, uncached server proxy. API unavailability becomes 503 with unknown dependency states; no fabricated healthy fallback.
 - The UI checks initially and on explicit retry; its timestamp is the last check, not a continuously refreshed monitor. A stopped worker can remain ready for at most the 10-second heartbeat grace period.
-- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema version 1 creation is atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
+- API and worker attempt migration during startup/recovery. A PostgreSQL advisory transaction lock serializes them; schema creation and the additive version 1 → 2 account migration are atomic and repeatable. Existing invalid/unsupported schemas fail closed, without destructive repair. Readiness validates required columns/types and actual storage operations, not just `pg_isready`.
 - Worker has no business jobs yet: its real duty here is database/schema verification and a heartbeat every 2 seconds. This is not a job-queue implementation.
 
-## Tests
+## Registration (TK-02)
+
+Open `/register` for the light-only Persian form. Only username and password are
+collected. There is deliberately no email, SMS, password recovery, login or
+automatic session creation in this slice. Success confirms a committed account,
+not an authenticated session or a configured shop.
+
+`POST /api/auth/register` proxies to the private Go `POST /auth/register` API.
+The exact normalization, password hashing, response/error contract and pre-build
+visual plan are in [docs/tk-02-design.md](docs/tk-02-design.md). Normalized usernames
+are unique in PostgreSQL, including concurrent requests; a retry after an unknown
+network outcome may report the username already taken, never a second account.
+Two concurrent Argon2id hashes per API process are allowed; excess requests receive
+429. This is a memory-capacity bound, not a claim of distributed abuse prevention.
+Before public deployment add edge abuse/rate controls along with the HTTPS and
+session work; the current Compose deployment publishes web only on loopback.
+
+## Test commands
 
 Requires Go 1.26, Node 22+, Docker and Playwright Chromium dependencies:
 
@@ -66,6 +83,11 @@ npm --prefix web exec -- playwright install --with-deps chromium
 npm --prefix web run typecheck
 bash scripts/smoke.sh
 ```
+
+Optional direct Go registration/schema integration tests require a dedicated
+PostgreSQL database: set `REGISTRATION_TEST_DATABASE_URL` and run `go test ./...`.
+They migrate and create/delete a test account; never point them at live data.
+See [TK-02 validation](docs/tk-02-validation.md) for results and screenshot critique.
 
 Smoke uses a separate `shop-smoke` project/volume and port 3100. Set `SMOKE_PROJECT=shop-smoke-<unique-suffix>` for a fresh database. Its volume is intentionally preserved after testing, never deleted by the script. It tests browser → API → PostgreSQL, write/read, schema damage, worker outage, database outage/recovery, container recreation without lost probe data, local fonts, mobile width, loading/error/empty/success states, keyboard retry and absence of the known server secret in browser assets/logs. Screenshots are in `web/test-results/`.
 

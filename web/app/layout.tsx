@@ -4,8 +4,8 @@ import "@fontsource/vazirmatn/600.css";
 import "./style.css";
 
 export const metadata: Metadata = {
-  title: "سلامت دستیار فروشگاه",
-  description: "بررسی آمادگی برنامه و ارتباط پایگاه داده",
+  title: "دستیار فروشگاه",
+  description: "دستیار مدیریت سفارش‌های فروشگاه اینستاگرام",
 };
 export default function Layout({ children }: { children: React.ReactNode }) {
   return (

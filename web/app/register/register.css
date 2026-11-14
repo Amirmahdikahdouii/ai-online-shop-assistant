@@ -1,0 +1,32 @@
+.registration { max-width: 1120px; }
+.register-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 64px; padding-top: 48px; align-items: start; }
+.register-form { background: #fff; padding: 32px; border: 1px solid var(--line); border-radius: 12px; }
+.register-form h1 { font-size: clamp(28px, 3vw, 36px); letter-spacing: 0; margin-bottom: 8px; }
+.register-lead { margin-bottom: 32px; }
+.register-field { margin-bottom: 24px; }
+.register-field label { display: block; font-weight: 600; margin-bottom: 8px; }
+.register-field input { display: block; width: 100%; min-height: 48px; border: 1px solid #8190a4; border-radius: 8px; padding: 10px 12px; color: var(--ink); background: #fff; font: inherit; }
+.register-field input:focus-visible, .registered h1:focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+.register-field input[aria-invalid="true"] { border-color: #a52b32; }
+.register-field p, .password-notice { font-size: 14px; margin-top: 8px; }
+.register-field .field-error { color: #a52b32; }
+.password-notice { border-inline-start: 3px solid var(--line); padding-inline-start: 12px; margin-bottom: 24px; }
+.register-form button { width: 100%; min-height: 48px; }
+.register-error { padding: 12px; background: #fff0f0; color: #a52b32; margin-bottom: 16px; border-radius: 8px; }
+.sending { font-size: 14px; margin-bottom: 12px; }
+.register-context { margin: 24px 0 0; border: 0; padding: 0; }
+.register-context h2 { font-size: 24px; margin-bottom: 16px; }
+.register-context p { font-size: 16px; }
+.username-example { border-top: 1px solid var(--line); margin-top: 32px; padding-top: 24px; }
+.username-example h3 { font-size: 16px; margin: 0 0 8px; }
+.username-example bdi { display: block; width: fit-content; padding: 8px 0; font-size: 22px; color: var(--blue); }
+.registered h1 { color: var(--green); }
+.registered p + p { margin-top: 24px; }
+.registered-name { overflow-wrap: anywhere; font-weight: 600; color: var(--ink); }
+@media (max-width: 760px) {
+  .registration { padding: 20px 20px 40px; }
+  .register-layout { grid-template-columns: minmax(0, 1fr); gap: 32px; padding-top: 32px; }
+  .register-form { padding: 24px 16px; }
+  .register-context { margin: 0; }
+  .registration header { align-items: start; flex-wrap: wrap; }
+}

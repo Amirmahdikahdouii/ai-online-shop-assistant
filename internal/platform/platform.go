@@ -16,6 +16,9 @@ import (
 //go:embed schema.sql
 var schema string
 
+//go:embed identity.sql
+var identitySchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -72,6 +75,18 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 			return err
 		}
 	}
+	var version int
+	if err = tx.QueryRow(ctx, "SELECT version FROM infrastructure.schema_version").Scan(&version); err != nil {
+		return err
+	}
+	if version == 1 {
+		if err = validateVersion(ctx, tx, 1); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, identitySchema); err != nil {
+			return err
+		}
+	}
 	if err = validate(ctx, tx); err != nil {
 		return err
 	}
@@ -83,11 +98,15 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
+	return validateVersion(ctx, db, 2)
+}
+
+func validateVersion(ctx context.Context, db querier, expected int) error {
 	var version int
 	if err := db.QueryRow(ctx, "SELECT version FROM infrastructure.schema_version").Scan(&version); err != nil {
 		return err
 	}
-	if version != 1 {
+	if version != expected {
 		return errors.New("unsupported schema")
 	}
 	// Verify required columns and types, even when a version marker survives schema damage.
@@ -103,6 +122,20 @@ func validate(ctx context.Context, db querier) error {
 	}
 	if !valid {
 		return errors.New("invalid schema")
+	}
+	if expected == 2 {
+		if err := db.QueryRow(ctx, `SELECT count(*) = 4 FROM information_schema.columns WHERE table_schema='identity' AND table_name='users' AND ((column_name IN ('id','username','password_hash') AND data_type='text') OR (column_name='created_at' AND data_type='timestamp with time zone'))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid identity schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='identity.users'::regclass AND conname='users_username_key' AND contype='u' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='identity.users'::regclass AND attname='username')]::smallint[])`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid identity uniqueness")
+		}
 	}
 	return nil
 }

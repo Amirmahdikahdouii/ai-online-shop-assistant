@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"shopassistant/internal/identity"
 	"shopassistant/internal/platform"
 )
 
@@ -66,6 +67,9 @@ func main() {
 		}
 	}()
 	mux := http.NewServeMux()
+	if role == "api" {
+		mux.Handle("POST /auth/register", identity.RegisterHandler(pool))
+	}
 	mux.HandleFunc("GET /livez", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200) })
 	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
