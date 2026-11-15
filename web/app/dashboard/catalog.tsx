@@ -37,7 +37,8 @@ export default function Catalog({ store, csrf, openedProduct }: { store: string;
   useEffect(() => { if (openedProduct) void open(openedProduct.id); }, [openedProduct]);
   async function mutate(action = "") {
     if (!product || lock.current) return;
-    if (!action && Object.keys(reviewErrors(product)).length) { setFields(reviewErrors(product)); setError(Object.values(reviewErrors(product))[0]); return; }
+    const errors = reviewErrors(product);
+    if (!action && Object.keys(errors).length) { setFields({}); setError(Object.values(errors)[0]); return; }
     lock.current = true; setBusy(true); setError(""); setSuccess(""); setFields({});
     try {
       const body = action ? { revision: product.revision } : { ...productFields(product), revision: product.revision };

@@ -41,10 +41,38 @@ The existing light Persian RTL editor with local Vazirmatn now provides:
 - The existing extraction browser test now checks caption/proposal evidence in
   the editor, correction, approval and persisted original evidence. Together with
   the catalog regression these passed 6/6; the expanded approval checks passed 2/2.
+- After review cleanup, the targeted approval/catalog browser regression passed
+  **4/4** against the final production build. Mobile editing/validation and
+  before/after summaries were also inspected.
 - Mobile evidence and desktop approval/history screenshots were inspected. The
   evidence disclosure wraps long source IDs, forms stack at mobile width, and
   summary/audit contents remain inside the viewport.
-- TypeScript typecheck and production Next.js build passed.
+- TypeScript typecheck, production Next.js build, and `git diff --check` passed.
+- All Go packages passed with race detection against a separate dedicated
+  PostgreSQL 17 test database; `go vet` passed:
+
+  ```sh
+  REGISTRATION_TEST_DATABASE_URL=postgres://…/shop_tests?sslmode=disable \
+    GOTOOLCHAIN=local go test -race -modfile=/tmp/shop-test.mod ./...
+  GOTOOLCHAIN=local go vet -modfile=/tmp/shop-test.mod ./...
+  ```
+
+- The full browser suite passed **25/25**, including database/worker outages,
+  schema damage/recovery, container recreation/persistence, session expiry,
+  registration, access isolation, processing, post selection and catalog flows.
+  The isolated `shop-smoke-tk11` Compose project used the normal service topology
+  and PostgreSQL 17, with `/tmp/shop-tk11-compose.yaml` replacing only build/image
+  sources: local static Go binary in cached Alpine, and the production standalone
+  web output with local Node 26.13.0 in cached Ubuntu. No shipped Compose or
+  Dockerfile was changed. This is a fallback-runtime regression result.
+
+  ```sh
+  SMOKE_PROJECT=shop-smoke-tk11 \
+  COMPOSE_FILE="$PWD/compose.yaml:/tmp/shop-tk11-compose.yaml" \
+  APP_ORIGIN=http://127.0.0.1:3100 \
+    web/node_modules/.bin/playwright test \
+    --config=/tmp/shop-tk10-playwright.config.cjs
+  ```
 
 ## Environment limits
 
@@ -56,4 +84,22 @@ through a temporary Playwright configuration. Canonical deployment-image
 validation is incomplete; compatibility checks must not be described as native
 Go 1.26 or canonical image validation.
 
-Full regression and review results will be recorded after the final checks.
+The smoke containers were stopped after validation; their database volume was
+preserved. Issue #12 remains open pending canonical toolchain/image validation.
+The ticket's API and browser acceptance paths passed in the documented fallback
+runtimes; no live integration was required or exercised.
+
+## Standards
+
+No documented-standard violation or blocking finding. One optional duplication
+finding (form validation evaluated three times) was addressed by computing it
+once. Client validation errors now clear as the field is corrected; a browser
+regression checks the accessible invalid state clears after duplicate removal.
+
+## Spec
+
+No missing requirement, scope creep or incorrect behavior found within issue
+#12's explicit scope. Caption evidence, required identity, optional unknown
+prices, revision arbitration, summaries and explicit approval were reviewed.
+
+Review totals after correction: Standards 0 outstanding; Spec 0 outstanding.

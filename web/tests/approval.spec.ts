@@ -16,6 +16,7 @@ for (const width of [360, 1280]) test(`review changes and approve with stale rev
   await page.goto("/dashboard/products");
   await page.getByRole("button", { name: "مشاهده و ویرایش" }).click();
   const editor = page.getByRole("region", { name: "فرم محصول" });
+  await page.evaluate(() => document.fonts.ready);
   const approve = editor.getByRole("button", { name: "تأیید صریح محصول ذخیره‌شده" });
   await expect(editor.getByText("تا تأیید شما، این محصول قلم قطعی سفارش نیست.")).toBeVisible();
   await page.getByLabel("نام تنوع", { exact: true }).fill("  ");
@@ -27,6 +28,8 @@ for (const width of [360, 1280]) test(`review changes and approve with stale rev
   const changes = editor.getByRole("region", { name: "خلاصهٔ تغییرات" });
   await expect(changes).toContainText("زیتونی متوسط");
   await expect(changes).toContainText("زیتونی بزرگ");
+  expect(await changes.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
+  await editor.screenshot({ path: `test-results/approval-editing-${width}.png` });
   await changes.screenshot({ path: `test-results/approval-changes-${width}.png` });
   await expect(approve).toBeDisabled();
   await page.getByRole("button", { name: "ذخیره محصول", exact: true }).click();

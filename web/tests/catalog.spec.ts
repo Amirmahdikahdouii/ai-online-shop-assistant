@@ -33,6 +33,7 @@ for (const width of [360, 1280]) test(`manual catalog lifecycle at ${width}px`, 
   await expect(page.getByLabel("مقدار ویژگی").nth(0)).toHaveValue("آبی");
   await expect(page.getByLabel("مقدار ویژگی").nth(1)).toHaveValue("متوسط");
   await page.getByRole("button", { name: "حذف ویژگی" }).nth(1).click();
+  await expect(page.getByLabel("نام ویژگی")).toHaveAttribute("aria-invalid", "false");
   await page.getByRole("button", { name: "افزودن تنوع", exact: true }).click();
   await page.getByLabel("نام تنوع", { exact: true }).nth(1).fill("سفید بزرگ");
   await page.getByLabel("قیمت نامعلوم").nth(1).uncheck();
