@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"math/rand/v2"
 	"strconv"
 	"time"
@@ -148,6 +149,16 @@ func (w Worker) ProcessOne(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	started := time.Now()
+	metadata := w.Extractor.Metadata()
+	outcome := "storage_error"
+	defer func() {
+		var cost any = "unknown"
+		if metadata.Simulated {
+			cost = 0.0
+		}
+		slog.Info("caption extraction attempt", "duration_ms", time.Since(started).Milliseconds(), "outcome", outcome, "model", metadata.Model, "policy", metadata.Policy, "simulated", metadata.Simulated, "cost_usd", cost)
+	}()
 	timeout := w.Timeout
 	if timeout <= 0 {
 		timeout = 2 * time.Second
@@ -167,7 +178,11 @@ func (w Worker) ProcessOne(ctx context.Context) error {
 		err = validate(p, t.Input)
 	}
 	if err == nil {
-		return w.Queue.Complete(ctx, t, p)
+		err = w.Queue.Complete(ctx, t, p)
+		if err == nil {
+			outcome = p.Outcome
+		}
+		return err
 	}
 	reason, retry := "provider_error", true
 	switch {
@@ -180,6 +195,7 @@ func (w Worker) ProcessOne(ctx context.Context) error {
 	case errors.Is(err, context.DeadlineExceeded):
 		reason = "timeout"
 	}
+	outcome = reason
 	// Storage settlement uses the parent context, independently of model timeout.
 	return w.Queue.Fail(ctx, t, reason, retry)
 }

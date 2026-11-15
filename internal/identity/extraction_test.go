@@ -1,9 +1,11 @@
 package identity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -25,6 +27,10 @@ func (q brokenExtractionQueue) Enqueue(context.Context, pgx.Tx, string) error {
 
 type extractorFunc func(context.Context, extraction.Input) (extraction.Proposal, error)
 
+func (f extractorFunc) Metadata() extraction.Metadata {
+	return extraction.Metadata{Model: "controlled", Policy: "test-v1", Simulated: true}
+}
+
 func (f extractorFunc) Extract(ctx context.Context, in extraction.Input) (extraction.Proposal, error) {
 	return f(ctx, in)
 }
@@ -34,6 +40,10 @@ func TestCaptionExtraction(t *testing.T) {
 	if url == "" {
 		t.Skip("requires dedicated PostgreSQL")
 	}
+	var diagnostics bytes.Buffer
+	originalLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewJSONHandler(&diagnostics, nil)))
+	defer slog.SetDefault(originalLogger)
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, url)
 	if err != nil {
@@ -264,6 +274,13 @@ func TestCaptionExtraction(t *testing.T) {
 	call("POST", "/post-selections", `{"postIds":["demo-page-post-04"],"key":"atomic-enqueue"}`, 200)
 	if err = worker.ProcessOne(ctx); err != nil {
 		t.Fatal(err)
+	}
+
+	if !strings.Contains(diagnostics.String(), `"outcome":"timeout"`) || !strings.Contains(diagnostics.String(), `"model":"scripted-v1"`) || !strings.Contains(diagnostics.String(), `"cost_usd":0`) {
+		t.Fatal("missing structured attempt diagnostics", diagnostics.String())
+	}
+	if strings.Contains(diagnostics.String(), "مانتو لینن") || strings.Contains(diagnostics.String(), token) || strings.Contains(diagnostics.String(), csrf) {
+		t.Fatal("source or session data leaked to logs")
 	}
 
 }

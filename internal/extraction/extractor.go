@@ -37,8 +37,17 @@ type Proposal struct {
 	Model      string           `json:"model"`
 	Policy     string           `json:"policy"`
 }
+
+// Metadata comes from server-side adapter configuration, never model output or
+// source text, so attempt logs can identify the model without exposing captions.
+type Metadata struct {
+	Model     string
+	Policy    string
+	Simulated bool
+}
 type Extractor interface {
 	Extract(context.Context, Input) (Proposal, error)
+	Metadata() Metadata
 }
 
 var ErrInvalid = errors.New("invalid extraction output")
@@ -121,11 +130,16 @@ func known(in Input, v, q string) Field {
 // unseen text, contact a model, or inspect images. Fixtures are content keyed.
 type ScriptedExtractor struct{}
 
+func (ScriptedExtractor) Metadata() Metadata {
+	return Metadata{Model: "scripted-v1", Policy: "caption-v1", Simulated: true}
+}
+
 func (ScriptedExtractor) Extract(ctx context.Context, in Input) (Proposal, error) {
 	if err := ctx.Err(); err != nil {
 		return Proposal{}, err
 	}
-	p := Proposal{Outcome: "product", Name: unknown(), Code: unknown(), Price: unknown(), Attributes: map[string]Field{}, Model: "scripted-v1", Policy: "caption-v1"}
+	metadata := (ScriptedExtractor{}).Metadata()
+	p := Proposal{Outcome: "product", Name: unknown(), Code: unknown(), Price: unknown(), Attributes: map[string]Field{}, Model: metadata.Model, Policy: metadata.Policy}
 	switch in.Caption {
 	case "مانتو لینن نارون؛ رنگ‌های زیتونی و کرم، سایز ۳۸ تا ۴۴. قیمت هر عدد ۸۹۰٬۰۰۰ تومان.":
 		p.Name = known(in, "مانتو لینن نارون", "مانتو لینن نارون")
