@@ -119,10 +119,30 @@ func TestCaptionExtraction(t *testing.T) {
 	}
 	var detail struct {
 		Product Product `json:"product"`
+		Sources []struct {
+			SelectionID string          `json:"selectionId"`
+			Caption     string          `json:"caption"`
+			Proposal    json.RawMessage `json:"proposal"`
+		} `json:"sources"`
 	}
 	json.Unmarshal(call("GET", "/products/"+*s.ProductID, "", 200), &detail)
 	if detail.Product.Status != "draft" || detail.Product.Name != "مانتو لینن نارون" || len(detail.Product.Variants) != 1 || detail.Product.Variants[0].Price == nil || *detail.Product.Variants[0].Price != 890000 {
 		t.Fatal(detail)
+	}
+	if len(detail.Sources) != 1 || detail.Sources[0].SelectionID != s.SelectionID || !strings.Contains(detail.Sources[0].Caption, "مانتو لینن نارون") || len(detail.Sources[0].Proposal) == 0 {
+		t.Fatalf("product review must expose saved caption evidence: %+v", detail.Sources)
+	}
+	originalSources, _ := json.Marshal(detail.Sources)
+	detail.Product.Variants[0].Name = "زیتونی متوسط"
+	detail.Product.Variants[0].Price = nil
+	edit, _ := json.Marshal(map[string]any{"name": detail.Product.Name, "variants": detail.Product.Variants, "revision": 1})
+	call("POST", "/products/"+*s.ProductID, string(edit), 200)
+	call("POST", "/products/"+*s.ProductID+"/approve", `{"revision":1}`, 409)
+	call("POST", "/products/"+*s.ProductID+"/approve", `{"revision":2}`, 200)
+	json.Unmarshal(call("GET", "/products/"+*s.ProductID, "", 200), &detail)
+	afterSources, _ := json.Marshal(detail.Sources)
+	if string(originalSources) != string(afterSources) || detail.Product.Status != "approved" || detail.Product.Revision != 3 || detail.Product.Variants[0].Price != nil {
+		t.Fatal("approval/edit lost evidence or guessed price", detail)
 	}
 	call("POST", "/post-selections", `{"postIds":["demo-page-post-01"],"key":"extract-again"}`, 200)
 	if err = worker.ProcessOne(ctx); err != nil {
@@ -243,6 +263,7 @@ func TestCaptionExtraction(t *testing.T) {
 		t.Fatal("stale lease accepted", err)
 	}
 	proposal.Attributes["جنس"] = extraction.Field{State: "conflict", Values: []string{"پارچه‌ای", "طبیعی"}, Sources: []extraction.Source{{ID: fresh.SourceID, Quote: "پارچه‌ای"}, {ID: fresh.SourceID, Quote: "طبیعی"}}}
+	proposal.Name = extraction.Field{State: "unknown", Values: []string{}, Sources: []extraction.Source{}}
 	if err = q.Complete(ctx, fresh, proposal); err != nil {
 		t.Fatal(err)
 	}
@@ -258,6 +279,14 @@ func TestCaptionExtraction(t *testing.T) {
 			json.Unmarshal(call("GET", "/products/"+*s.ProductID, "", 200), &detail)
 			if detail.Product.Status != "draft" || detail.Product.Variants[0].Price != nil || detail.Product.Variants[0].Attributes["جنس"] != "" {
 				t.Fatal("guessed unknown/conflicting field", detail)
+			}
+			rejected := call("POST", "/products/"+*s.ProductID+"/approve", `{"revision":1}`, 422)
+			if !strings.Contains(string(rejected), `"variants.0.name"`) || !strings.Contains(string(rejected), `"name"`) {
+				t.Fatal(string(rejected))
+			}
+			json.Unmarshal(call("GET", "/products/"+*s.ProductID, "", 200), &detail)
+			if detail.Product.Revision != 1 || detail.Product.Status != "draft" {
+				t.Fatal("rejected approval changed draft", detail)
 			}
 			call("POST", "/post-selections/"+invalidID+"/retry", `{}`, 409)
 		}

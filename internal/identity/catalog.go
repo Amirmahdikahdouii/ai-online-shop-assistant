@@ -3,6 +3,7 @@ package identity
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -43,9 +44,10 @@ func validateProduct(p *Product) map[string]string {
 	codes, ids := map[string]bool{}, map[string]bool{}
 	for i := range p.Variants {
 		v := &p.Variants[i]
+		prefix := fmt.Sprintf("variants.%d.", i)
 		v.Name = strings.TrimSpace(v.Name)
 		if !catalogText(v.Name, 120) {
-			fields["variants"] = "نام هر تنوع الزامی است و حداکثر ۱۲۰ نویسه دارد."
+			fields[prefix+"name"] = "نام هر تنوع الزامی است و حداکثر ۱۲۰ نویسه دارد."
 		}
 		if v.ID != "" && (!catalogText(v.ID, 100) || ids[v.ID]) {
 			fields["variants"] = "شناسهٔ تنوع تکراری یا نامعتبر است."
@@ -58,23 +60,23 @@ func validateProduct(p *Product) map[string]string {
 			} else {
 				v.Code = &c
 				if !catalogText(c, 80) || codes[c] {
-					fields["code"] = "کد تنوع باید معتبر و در فروشگاه یکتا باشد."
+					fields[prefix+"code"] = "کد تنوع باید معتبر و در فروشگاه یکتا باشد."
 				}
 				codes[c] = true
 			}
 		}
 		if v.Price != nil && (*v.Price < 0 || *v.Price > 9007199254740991) {
-			fields["price"] = "قیمت باید مبلغ صحیح و نامنفی به تومان باشد."
+			fields[prefix+"price"] = "قیمت باید مبلغ صحیح و نامنفی به تومان باشد."
 		}
 		if v.Attributes == nil {
 			v.Attributes = map[string]string{}
 		}
 		if len(v.Attributes) > 20 {
-			fields["attributes"] = "حداکثر ۲۰ ویژگی ثبت کنید."
+			fields[prefix+"attributes"] = "حداکثر ۲۰ ویژگی ثبت کنید."
 		}
 		for k, value := range v.Attributes {
 			if !catalogText(k, 80) || !catalogText(value, 200) {
-				fields["attributes"] = "نام و مقدار ویژگی را کامل و معتبر وارد کنید."
+				fields[prefix+"attributes"] = "نام و مقدار ویژگی را کامل و معتبر وارد کنید."
 			}
 		}
 	}
@@ -130,7 +132,28 @@ func (a *Auth) catalogRequest(w http.ResponseWriter, r *http.Request, user, stor
 				fail(503, "catalog_unavailable")
 				return
 			}
-			reply(200, map[string]any{"product": p, "history": history})
+			rows.Close()
+			sources := []map[string]any{}
+			evidence, err := a.Pool.Query(ctx, `SELECT id,post_id,caption,proposal FROM catalog.post_selections WHERE store_id=$1 AND product_id=$2 ORDER BY id`, store, id)
+			if err != nil {
+				fail(503, "catalog_unavailable")
+				return
+			}
+			defer evidence.Close()
+			for evidence.Next() {
+				var selection, post, caption string
+				var proposal json.RawMessage
+				if evidence.Scan(&selection, &post, &caption, &proposal) != nil {
+					fail(503, "catalog_unavailable")
+					return
+				}
+				sources = append(sources, map[string]any{"selectionId": selection, "postId": post, "caption": caption, "proposal": proposal})
+			}
+			if evidence.Err() != nil {
+				fail(503, "catalog_unavailable")
+				return
+			}
+			reply(200, map[string]any{"product": p, "history": history, "sources": sources})
 			return
 		}
 		q := strings.TrimSpace(r.URL.Query().Get("q"))
@@ -285,14 +308,14 @@ func (a *Auth) catalogRequest(w http.ResponseWriter, r *http.Request, user, stor
 		fail(503, "catalog_unavailable")
 		return
 	}
-	for _, v := range p.Variants {
+	for i, v := range p.Variants {
 		if v.Code == nil {
 			continue
 		}
 		var reserved string
 		err = tx.QueryRow(ctx, `INSERT INTO catalog.codes(store_id,code,product_id,variant_id) VALUES($1,$2,$3,$4) ON CONFLICT(store_id,code) DO UPDATE SET code=EXCLUDED.code WHERE catalog.codes.product_id=EXCLUDED.product_id AND catalog.codes.variant_id=EXCLUDED.variant_id RETURNING code`, store, *v.Code, p.ID, v.ID).Scan(&reserved)
 		if errors.Is(err, pgx.ErrNoRows) {
-			reply(409, map[string]any{"code": "code_conflict", "fieldErrors": map[string]string{"code": "این کد در فروشگاه برای محصول یا تنوع دیگری رزرو شده است."}})
+			reply(409, map[string]any{"code": "code_conflict", "fieldErrors": map[string]string{fmt.Sprintf("variants.%d.code", i): "این کد در فروشگاه برای محصول یا تنوع دیگری رزرو شده است."}})
 			return
 		}
 		if err != nil {

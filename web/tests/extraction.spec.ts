@@ -52,10 +52,24 @@ for (const width of [360, 1280]) test(`caption extraction, evidence and review a
  await extraction.getByRole("button", { name: "بررسی و ویرایش محصول" }).click();
  await expect(page.getByRole("heading", { name: "جزئیات و ویرایش محصول" })).toBeFocused();
  await expect(page.getByLabel("نام محصول", { exact: true })).toHaveValue("مانتو لینن نارون");
+ const editor = page.getByRole("region", { name: "فرم محصول" });
+ const sources = editor.getByRole("region", { name: "شواهد کپشن" });
+ await sources.locator("summary").click();
+ await expect(sources).toContainText(selected.caption);
+ await expect(sources).toContainText("از کپشن همین پست: «مانتو لینن نارون»");
+ await page.getByLabel("نام تنوع", { exact: true }).fill("زیتونی متوسط");
+ await expect(editor.getByRole("region", { name: "خلاصهٔ تغییرات" })).toContainText("زیتونی متوسط");
+ await page.getByRole("button", { name: "ذخیره محصول", exact: true }).click();
+ await expect(page.locator(".catalog [role=status]")).toHaveText("محصول ذخیره شد.");
+ await expect(sources).toContainText(selected.caption);
+ await editor.screenshot({ path: `test-results/approval-evidence-${width}.png` });
  await page.getByRole("button", { name: "تأیید صریح محصول ذخیره‌شده" }).click();
  await expect(page.getByRole("status").filter({ hasText: "محصول تأیید شد." })).toBeVisible();
  const detail = await (await page.request.get(`${base}/products/${selected.productId}`)).json();
  expect(detail.product.status).toBe("approved");
+ expect(detail.product.variants[0].name).toBe("زیتونی متوسط");
+ expect(detail.sources[0].caption).toBe(selected.caption);
+ expect(detail.sources[0].proposal).toEqual(selected.proposal);
  // Failure/conflict display uses controlled responses; actual worker failures
  // and retry persistence are covered by the PostgreSQL API/worker tests.
  await page.route(`**${base}/post-selections?*`, async route => route.fulfill({ json: { selections: [{ ...selected, status: "failed", reason: "invalid_output", productId: null, proposal: null }], nextCursor: "" } }));

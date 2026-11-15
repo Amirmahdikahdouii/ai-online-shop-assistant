@@ -79,3 +79,14 @@
 .catalog-price { color: #475569; margin-inline-start: auto; }
 .catalog details { overflow-wrap: anywhere; line-height: 1.9; }
 @media (max-width:700px) { .catalog-fields, .catalog-attribute { grid-template-columns: minmax(0,1fr); } .catalog-editor { padding: 18px; } .catalog-variant { padding: 12px; } .catalog-filters label { width: 100%; } }
+.catalog-review, .catalog-sources { border-block-start: 1px solid var(--line); padding-block: 1rem; margin-block: 1rem; overflow-wrap: anywhere; }
+.catalog-review dl { margin: 0; }
+.catalog-review dl > div { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 1rem; padding-block: .6rem; border-bottom: 1px solid var(--line); }
+.catalog-review dt { font-weight: 700; }
+.catalog-review dd { margin: 0; white-space: pre-wrap; }
+.review-before { display: block; color: #526176; }
+.catalog-sources blockquote { margin-inline: 0; white-space: pre-wrap; line-height: 2; }
+.catalog-editor details { overflow-wrap: anywhere; }
+.catalog-editor summary { cursor: pointer; min-height: 44px; padding-block: .5rem; }
+.catalog-editor [aria-invalid="true"] { border-color: #a33131; }
+@media (max-width: 700px) { .catalog-review dl > div { grid-template-columns: minmax(0, 1fr); gap: .25rem; } }

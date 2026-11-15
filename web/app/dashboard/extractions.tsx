@@ -2,11 +2,11 @@
 import { useEffect, useRef, useState } from "react";
 
 type Field = { state: "known" | "unknown" | "conflict"; values: string[]; sources: { id: string; quote: string }[] };
-type Proposal = { outcome: string; name: Field; code: Field; price: Field; attributes: Record<string, Field> };
+export type Proposal = { outcome: string; name: Field; code: Field; price: Field; attributes: Record<string, Field> };
 type Selection = { selectionId: string; caption: string; publishedAt: string; selectedAt: string; status: string; reason: string; attempts: number; productId: string | null; proposal: Proposal | null };
 const states: Record<string, string> = { pending: "در انتظار استخراج", processing: "در حال استخراج", completed: "پیش‌نویس ساخته شد", failed: "استخراج ناموفق", blocked: "نیازمند رسیدگی" };
 const reasons: Record<string, string> = { timeout: "زمان استخراج تمام شد.", invalid_output: "نتیجهٔ استخراج معتبر نبود؛ محصولی ساخته نشد.", refused: "استخراج‌کننده پاسخی ارائه نکرد.", unavailable: "سرویس استخراج در دسترس نیست؛ پس از رفع مشکل دوباره تلاش کنید.", provider_error: "ارتباط با سرویس استخراج برقرار نشد.", no_product: "محصول مشخصی استخراج نشد؛ کپشن را بررسی کنید یا محصول را دستی ثبت کنید." };
-function EvidenceField({ label, field, money = false }: { label: string; field: Field; money?: boolean }) {
+export function EvidenceField({ label, field, money = false }: { label: string; field: Field; money?: boolean }) {
  return <div className={`extraction-field field-${field.state}`}><dt>{label}</dt><dd>
  {field.state === "unknown" ? <span className="field-missing">نامعلوم؛ نیازمند تکمیل</span> : <>{field.state === "conflict" && <strong className="field-conflict">تعارض؛ نیازمند بررسی: </strong>}{field.values.map((value, i) => <span key={i}>{i > 0 && " / "}{money ? `${Number(value).toLocaleString("fa-IR")} تومان` : value}</span>)}</>}
  {field.sources.map((source, i) => <small className="field-evidence" key={i}>از کپشن همین پست: «{source.quote}»</small>)}

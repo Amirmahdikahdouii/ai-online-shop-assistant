@@ -150,6 +150,35 @@ func TestCatalogLifecycle(t *testing.T) {
 	call("POST", path, edit, 0, 409)
 	call("POST", base, map[string]any{"name": "", "variants": []Variant{}}, 0, 422)
 	call("POST", base, input(nil), 0, 201)
+	// Approval and correction using the same revision serialize: one wins,
+	// the loser cannot overwrite content or add an audit event.
+	raceProduct := decode(call("POST", base, input(nil), 0, 201))
+	racePath := base + "/" + raceProduct.ID
+	raceEdit := map[string]any{"revision": 1, "name": "اصلاح هم‌زمان", "variants": raceProduct.Variants}
+	start := make(chan struct{})
+	outcomes := make(chan int, 2)
+	go func() { <-start; outcomes <- call("POST", racePath, raceEdit, 0, 0).Code }()
+	go func() {
+		<-start
+		outcomes <- call("POST", racePath+"/approve", map[string]int{"revision": 1}, 0, 0).Code
+	}()
+	close(start)
+	a, b := <-outcomes, <-outcomes
+	if !((a == 200 && b == 409) || (a == 409 && b == 200)) {
+		t.Fatalf("concurrent edit/approval: %d %d", a, b)
+	}
+	var audited struct {
+		Product Product
+		History []struct {
+			ActorID   string
+			ChangedAt string
+			Snapshot  Product
+		}
+	}
+	json.Unmarshal(call("GET", racePath, nil, 0, 200).Body.Bytes(), &audited)
+	if audited.Product.Revision != 2 || len(audited.History) != 2 || audited.History[1].ActorID != users[0] || audited.History[1].ChangedAt == "" {
+		t.Fatalf("missing atomic revision audit: %+v", audited)
+	}
 	// Concurrent claims for a new code must leave exactly one complete product.
 	concurrent := "RACE"
 	var wg sync.WaitGroup
