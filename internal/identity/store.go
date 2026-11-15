@@ -39,6 +39,10 @@ func (a *Auth) stores(ctx context.Context, userID string) ([]Store, error) {
 
 func (a *Auth) storeRequest(w http.ResponseWriter, r *http.Request, userID string, reply func(int, map[string]any), fail func(int, string)) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/stores/"), "/")
+	if len(parts) == 4 && parts[1] == "post-selections" && parts[3] == "mapping" {
+		a.postMapping(w, r, userID, parts[0], parts[2], reply, fail)
+		return
+	}
 	if len(parts) == 4 && parts[1] == "post-selections" && parts[3] == "retry" {
 		a.retryExtraction(w, r, userID, parts[0], parts[2], reply, fail)
 		return

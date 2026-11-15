@@ -1,0 +1,58 @@
+import { expect, test } from "@playwright/test";
+import { randomUUID } from "node:crypto";
+
+for (const width of [360, 1280]) test(`manager maps a post and retains corrections at ${width}px`, async ({ page }) => {
+ await page.setViewportSize({ width, height: 960 });
+ await page.goto("/login"); const origin = new URL(page.url()).origin;
+ const credentials = { username: `map_${randomUUID().replaceAll("-", "").slice(0, 12)}`, password: "mapping-password-12345" };
+ expect((await page.request.post("/api/auth/register", { data: credentials })).status()).toBe(201);
+ expect((await page.request.post("/api/auth/login", { headers: { Origin: origin }, data: credentials })).status()).toBe(200);
+ const me = await (await page.request.get("/api/me")).json(); const headers = { Origin: origin, "X-CSRF-Token": me.csrfToken };
+ const { store } = await (await page.request.post("/api/stores", { headers, data: { name: "پوشاک نارون" } })).json(); const base = `/api/stores/${store.id}`;
+ const { state } = await (await page.request.post(`${base}/connection/start`, { headers, data: {} })).json();
+ expect((await page.request.post(`${base}/connection/callback`, { headers, data: { state, code: width === 360 ? "demo-page" : "other-page" } })).status()).toBe(200);
+ for (const [name, variant, code] of [["پیراهن لینن", "آبی متوسط", "LIN-01"], ["شال نخی", "سفید", "SH-02"]]) {
+ expect((await page.request.post(`${base}/products`, { headers, data: { name, variants: [{ name: variant, code, price: null, attributes: {} }] } })).status()).toBe(201);
+ }
+ const postId = `${width === 360 ? "demo-page" : "other-page"}-post-01`;
+ const selected = await (await page.request.post(`${base}/post-selections`, { headers, data: { postIds: [postId], key: "mapping-post-01" } })).json();
+ const mappingURL = `${base}/post-selections/${selected.selections[0].selectionId}/mapping`;
+ await page.goto("/dashboard/products");
+ await page.getByRole("button", { name: "انتخاب یا اصلاح ارتباط محصولات" }).click();
+ const mapping = page.getByRole("region", { name: "ارتباط پست با محصول" });
+ await expect(mapping.getByRole("heading", { name: "محصول‌های این پست" })).toBeFocused();
+ await expect(mapping.getByText("هنوز تصمیمی ثبت نشده است.")).toBeVisible();
+ await expect(mapping.getByRole("checkbox", { name: "پیراهن لینن، آبی متوسط، LIN-01" })).toBeVisible();
+ await mapping.getByRole("checkbox", { name: "پیراهن لینن، آبی متوسط، LIN-01" }).focus(); await page.keyboard.press("Space");
+ await mapping.getByRole("checkbox", { name: "شال نخی، سفید، SH-02" }).check();
+ await page.route(`**${mappingURL}`, route => route.request().method() === "POST" ? route.abort() : route.continue());
+ await mapping.getByRole("button", { name: "ذخیرهٔ ارتباط پست" }).click();
+ await expect(mapping.getByRole("alert")).toContainText("پاسخ ذخیره دریافت نشد");
+ await page.unroute(`**${mappingURL}`);
+ await mapping.getByRole("button", { name: "ذخیرهٔ ارتباط پست" }).click();
+ await expect(mapping.getByRole("status").filter({ hasText: "ارتباط پست ذخیره شد." })).toBeVisible();
+ await expect(mapping.locator(".mapping-saved")).toContainText("آبی متوسط");
+ await expect(mapping.locator(".mapping-saved")).toContainText("شال نخی");
+ await mapping.getByLabel("جست‌وجوی محصول، کد یا تنوع").fill("پیدانشدنی");
+ await mapping.getByRole("button", { name: "جست‌وجوی محصولات" }).click();
+ await expect(mapping.getByText("محصولی پیدا نشد؛ عبارت جست‌وجو را تغییر دهید یا محصولی در کاتالوگ ثبت کنید.")).toBeVisible();
+ await page.reload(); await page.getByRole("button", { name: "انتخاب یا اصلاح ارتباط محصولات" }).click();
+ await expect(mapping.locator(".mapping-saved")).toContainText("نسخهٔ ۱");
+ await expect(mapping.locator(".mapping-saved")).toContainText("LIN-01");
+ await mapping.getByRole("checkbox", { name: "این پست محصول نیست", exact: true }).check();
+ await mapping.getByRole("button", { name: "ذخیرهٔ ارتباط پست" }).click();
+ await expect(mapping.locator(".mapping-saved")).toContainText("نسخهٔ ۲");
+ await expect(mapping.locator(".mapping-saved")).toContainText("این پست محصول نیست");
+ await mapping.getByText("تاریخچهٔ ارتباط پست", { exact: true }).click();
+ await expect(mapping.locator("details li")).toHaveCount(2);
+ expect((await (await page.request.get(mappingURL)).json()).history).toHaveLength(2);
+ expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+ await page.evaluate(() => document.fonts.ready);
+ await mapping.screenshot({ path: `test-results/post-mapping-${width}.png` });
+ let release!: () => void; const pending = new Promise<void>(resolve => { release = resolve; });
+ await page.route(`**${base}/products?*`, async route => { await pending; await route.continue(); });
+ await mapping.getByRole("button", { name: "جست‌وجوی محصولات" }).click();
+ await expect(mapping.getByRole("status").filter({ hasText: "در حال جست‌وجوی محصولات…" })).toBeVisible(); release();
+ await expect(mapping.getByRole("checkbox", { name: "شال نخی، سفید، SH-02" })).toBeVisible();
+ expect((await page.request.post(`${base}/connection/disconnect`, { headers, data: {} })).status()).toBe(200);
+});

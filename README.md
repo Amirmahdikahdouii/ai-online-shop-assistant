@@ -180,3 +180,33 @@ See [TK-02 validation](docs/tk-02-validation.md) for results and screenshot crit
 Smoke uses a separate `shop-smoke` project/volume and port 3100. Set `SMOKE_PROJECT=shop-smoke-<unique-suffix>` for a fresh database. Its volume is intentionally preserved after testing, never deleted by the script. It tests browser → API → PostgreSQL, write/read, schema damage, worker outage, database outage/recovery, container recreation without lost probe data, local fonts, mobile width, loading/error/empty/success states, keyboard retry and absence of the known server secret in browser assets/logs. Screenshots are in `web/test-results/`.
 
 `HEALTH_BASE_URL` optionally overrides the Playwright origin (default `http://127.0.0.1:3100`) when testing through a local tunnel. Docker builds still require working container DNS/networking for dependency downloads; host networking is not enabled in the shipped configuration.
+
+## Post/product decisions (TK-12)
+
+Next to a selected post's saved caption, **انتخاب یا اصلاح ارتباط محصولات**
+opens the store's searchable product/variant selector. Several posts can reuse
+one catalog identity, and one post can nominate several products or variants.
+Whole-product links leave the variant unspecified. Multiple links are candidates,
+not an instruction to order every item; draft products still require approval.
+The manager can instead save **این پست محصول نیست** and later correct that answer.
+
+`GET|POST /api/stores/{store}/post-selections/{selection}/mapping` requires the
+session and membership; POST also requires exact origin and CSRF. POST accepts
+`{ revision, notProduct, targets: [{ productId, variantId }] }`, where an empty
+`variantId` means unspecified. Initial revision is 0. A changed decision increments
+its revision atomically; a stale changed save returns 409. An identical save at
+the current or immediately preceding revision returns the saved decision without
+another audit event. Invalid, foreign-store, archived, duplicate or overlapping
+whole-product/variant targets are rejected. Up to 100 targets are supported.
+
+GET returns the current `mapping` and immutable `history` with manager ID, source,
+time and complete snapshots. Extraction provenance (`productId`/proposal) remains
+separate from the manager's reusable decision, so later extraction never replaces
+it. Product detail sources include currently mapped posts as well as the original
+extraction evidence. Mapping saves create no products or orders.
+
+Schema v10 stores `mapping_*` on the selection and appends
+`catalog.post_mapping_changes` in the same transaction. This is the durable hook
+for the next ticket: a future resume consumer can checkpoint `(selection_id,
+revision)` and re-read the current mapping before resuming eligible waiting work.
+No resume consumer, matching engine or historical order mutation is added here.

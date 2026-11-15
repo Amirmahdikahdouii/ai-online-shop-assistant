@@ -134,7 +134,7 @@ func (a *Auth) catalogRequest(w http.ResponseWriter, r *http.Request, user, stor
 			}
 			rows.Close()
 			sources := []map[string]any{}
-			evidence, err := a.Pool.Query(ctx, `SELECT id,post_id,caption,proposal FROM catalog.post_selections WHERE store_id=$1 AND product_id=$2 ORDER BY id`, store, id)
+			evidence, err := a.Pool.Query(ctx, `SELECT id,post_id,caption,proposal FROM catalog.post_selections WHERE store_id=$1 AND (product_id=$2 OR EXISTS (SELECT 1 FROM jsonb_array_elements(mapping_targets) t WHERE t->>'productId'=$2)) ORDER BY id`, store, id)
 			if err != nil {
 				fail(503, "catalog_unavailable")
 				return

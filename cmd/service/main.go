@@ -134,6 +134,8 @@ func main() {
 		mux.Handle("GET /stores/{store}/connection/status", auth)
 		mux.Handle("GET /stores/{store}/processing", auth)
 		mux.Handle("POST /stores/{store}/sample-events", auth)
+		mux.Handle("GET /stores/{store}/post-selections/{selection}/mapping", auth)
+		mux.Handle("POST /stores/{store}/post-selections/{selection}/mapping", auth)
 		mux.Handle("POST /stores/{store}/post-selections/{selection}/retry", auth)
 		mux.Handle("GET /stores/{store}/posts", auth)
 		mux.Handle("GET /stores/{store}/post-selections", auth)
