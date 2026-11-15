@@ -3,10 +3,13 @@ package identity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"github.com/jackc/pgx/v5"
 	"net/http/httptest"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"shopassistant/internal/extraction"
@@ -217,6 +220,70 @@ func TestPostMappingLifecycle(t *testing.T) {
 	json.Unmarshal(call("GET", base+"/products/"+draftID, "", 0, 200).Body.Bytes(), &detail)
 	if detail.Product.Status != "draft" || detail.Product.Name != "اصلاح مدیر" {
 		t.Fatal("manager-edited draft must be preserved", detail)
+	}
+
+	// Pause a real mapping request just before its commit, then concurrently
+	// replace the source post's draft. Assertions remain at the public API.
+	shared := selection("demo-page-post-07", "mapping-shared")
+	if e := worker.ProcessOne(ctx); e != nil {
+		t.Fatal(e)
+	}
+	json.Unmarshal(call("GET", base+"/post-selections", "", 0, 200).Body.Bytes(), &selections)
+	for _, s := range selections.Selections {
+		if s.SelectionID == shared && s.ProductID != nil {
+			draftID = *s.ProductID
+		}
+	}
+	function := pgx.Identifier{"catalog", "gate_" + strings.ToLower(platform.ID())}.Sanitize()
+	trigger := pgx.Identifier{"gate_" + strings.ToLower(platform.ID())}.Sanitize()
+	key := time.Now().UnixNano() & 0x7fffffff
+	_, err = pool.Exec(ctx, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN PERFORM pg_advisory_xact_lock(%d); RETURN NEW; END $$; CREATE TRIGGER %s BEFORE INSERT ON catalog.post_mapping_changes FOR EACH ROW WHEN (NEW.selection_id='%s') EXECUTE FUNCTION %s()`, function, key, trigger, id2, function))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pool.Exec(ctx, fmt.Sprintf(`DROP TRIGGER %s ON catalog.post_mapping_changes; DROP FUNCTION %s()`, trigger, function))
+	gate, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer gate.Rollback(ctx)
+	if _, err = gate.Exec(ctx, `SELECT pg_advisory_xact_lock($1)`, key); err != nil {
+		t.Fatal(err)
+	}
+	waitFor := func(query string, args ...any) {
+		t.Helper()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			var waiting bool
+			if err := pool.QueryRow(ctx, query, args...).Scan(&waiting); err != nil {
+				t.Fatal(err)
+			}
+			if waiting {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("request did not reach controlled database wait")
+	}
+	reused := make(chan int, 1)
+	go func() {
+		reused <- call("POST", base+"/post-selections/"+id2+"/mapping", `{"revision":1,"targets":[{"productId":"`+draftID+`","variantId":""}]}`, 0, 200).Code
+	}()
+	waitFor(`SELECT EXISTS(SELECT 1 FROM pg_locks WHERE locktype='advisory' AND objid=$1 AND NOT granted)`, key)
+	replaced := make(chan int, 1)
+	go func() {
+		replaced <- call("POST", base+"/post-selections/"+shared+"/mapping", `{"revision":0,"notProduct":true,"targets":[]}`, 0, 200).Code
+	}()
+	waitFor(`SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock' AND wait_event IN ('transactionid','tuple'))`)
+	if err = gate.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if <-reused != 200 || <-replaced != 200 {
+		t.Fatal("concurrent mapping failed")
+	}
+	json.Unmarshal(call("GET", base+"/products/"+draftID, "", 0, 200).Body.Bytes(), &detail)
+	if detail.Product.Status != "draft" {
+		t.Fatal("concurrently reused draft was archived", detail)
 	}
 	call("POST", path, `{"revision":2,"notProduct":true,"targets":[{"productId":"`+p.ID+`","variantId":""}]}`, 0, 422)
 }

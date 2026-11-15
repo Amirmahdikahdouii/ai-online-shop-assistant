@@ -118,10 +118,24 @@ func (a *Auth) postMapping(w http.ResponseWriter, r *http.Request, user, store, 
 		fail(409, "revision_conflict")
 		return
 	}
+	// Lock every affected product in one stable order. In particular, take the
+	// extracted candidate's lock before checking references in a later statement:
+	// a concurrent reuse may commit while we wait, and must be visible then.
+	productIDs := []string{}
+	for _, target := range input.Targets {
+		productIDs = append(productIDs, target.ProductID)
+	}
+	if extractedProduct != nil {
+		productIDs = append(productIDs, *extractedProduct)
+	}
+	if _, err = tx.Exec(ctx, `SELECT id FROM catalog.products WHERE store_id=$1 AND id=ANY($2::text[]) ORDER BY id FOR UPDATE`, store, productIDs); err != nil {
+		fail(503, "mapping_unavailable")
+		return
+	}
 	for _, target := range input.Targets {
 		var variants []Variant
 		var status string
-		err = tx.QueryRow(ctx, `SELECT variants,status FROM catalog.products WHERE id=$1 AND store_id=$2 FOR SHARE`, target.ProductID, store).Scan(&variants, &status)
+		err = tx.QueryRow(ctx, `SELECT variants,status FROM catalog.products WHERE id=$1 AND store_id=$2`, target.ProductID, store).Scan(&variants, &status)
 		if errors.Is(err, pgx.ErrNoRows) {
 			fail(422, "invalid_target")
 			return
