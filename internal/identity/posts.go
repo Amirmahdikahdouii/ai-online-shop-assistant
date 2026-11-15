@@ -10,15 +10,20 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"shopassistant/internal/extraction"
 	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
 )
 
 type SelectedPost struct {
 	instagram.Post
-	SelectionID string    `json:"selectionId"`
-	Status      string    `json:"status"`
-	SelectedAt  time.Time `json:"selectedAt"`
+	ProductID   *string              `json:"productId"`
+	Proposal    *extraction.Proposal `json:"proposal"`
+	Reason      string               `json:"reason"`
+	Attempts    int                  `json:"attempts"`
+	SelectionID string               `json:"selectionId"`
+	Status      string               `json:"status"`
+	SelectedAt  time.Time            `json:"selectedAt"`
 }
 
 func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store, resource string, reply func(int, map[string]any), fail func(int, string)) {
@@ -34,7 +39,7 @@ func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store,
 	}
 	if r.Method == "GET" && resource == "post-selections" {
 		cursor := r.URL.Query().Get("cursor")
-		rows, err := a.Pool.Query(ctx, `SELECT id,post_id,caption,published_at,status,selected_at FROM catalog.post_selections WHERE store_id=$1 AND ($2='' OR id>$2) ORDER BY id LIMIT 21`, store, cursor)
+		rows, err := a.Pool.Query(ctx, `SELECT s.id,s.post_id,s.caption,s.published_at,s.status,s.selected_at,s.product_id,s.proposal,coalesce(j.reason,'queued'),coalesce(j.attempts,0) FROM catalog.post_selections s LEFT JOIN catalog.extraction_jobs j ON j.selection_id=s.id WHERE s.store_id=$1 AND ($2='' OR s.id>$2) ORDER BY s.id LIMIT 21`, store, cursor)
 		if err != nil {
 			fail(503, "posts_unavailable")
 			return
@@ -43,7 +48,7 @@ func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store,
 		items := []SelectedPost{}
 		for rows.Next() {
 			var p SelectedPost
-			if rows.Scan(&p.SelectionID, &p.ID, &p.Caption, &p.PublishedAt, &p.Status, &p.SelectedAt) != nil {
+			if rows.Scan(&p.SelectionID, &p.ID, &p.Caption, &p.PublishedAt, &p.Status, &p.SelectedAt, &p.ProductID, &p.Proposal, &p.Reason, &p.Attempts) != nil {
 				fail(503, "posts_unavailable")
 				return
 			}
@@ -209,6 +214,10 @@ func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store,
 		}
 		selected := SelectedPost{Post: p}
 		if err = tx.QueryRow(ctx, `SELECT id,status,selected_at,caption,published_at FROM catalog.post_selections WHERE store_id=$1 AND connection_id=$2 AND post_id=$3`, store, c.ID, id).Scan(&selected.SelectionID, &selected.Status, &selected.SelectedAt, &selected.Caption, &selected.PublishedAt); err != nil {
+			fail(503, "posts_unavailable")
+			return
+		}
+		if err = a.ExtractionQueue.Enqueue(ctx, tx, selected.SelectionID); err != nil {
 			fail(503, "posts_unavailable")
 			return
 		}

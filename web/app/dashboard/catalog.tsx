@@ -6,7 +6,7 @@ type History = { revision: number; changedAt: string; snapshot: Product };
 const blankVariant = (): Variant => ({ id: "", name: "", code: null, price: null, attributes: {} });
 const blank = (): Product => ({ id: "", name: "", revision: 0, status: "draft", variants: [blankVariant()] });
 const statuses: Record<string, string> = { draft: "پیش‌نویس", approved: "تأییدشده", archived: "بایگانی‌شده" };
-export default function Catalog({ store, csrf }: { store: string; csrf: string }) {
+export default function Catalog({ store, csrf, openedProduct }: { store: string; csrf: string; openedProduct?: {id: string} | null }) {
   const base = `/api/stores/${encodeURIComponent(store)}/products`;
   const [items, setItems] = useState<Product[]>([]); const [product, setProduct] = useState<Product | null>(null);
   const [history, setHistory] = useState<History[]>([]);
@@ -34,6 +34,7 @@ export default function Catalog({ store, csrf }: { store: string; csrf: string }
     catch { setError("محصول دریافت نشد. دوباره تلاش کنید."); }
     finally { lock.current = false; setBusy(false); }
   }
+  useEffect(() => { if (openedProduct) void open(openedProduct.id); }, [openedProduct]);
   async function mutate(action = "") {
     if (!product || lock.current) return; lock.current = true; setBusy(true); setError(""); setSuccess(""); setFields({});
     try {
@@ -82,7 +83,7 @@ export default function Catalog({ store, csrf }: { store: string; csrf: string }
       {history.length > 0 && <details><summary>تاریخچهٔ تغییرات</summary><ol>{history.map(h => <li key={h.revision}>نسخهٔ {h.revision.toLocaleString("fa-IR")}، {new Date(h.changedAt).toLocaleString("fa-IR")}، {h.snapshot.name}، {statuses[h.snapshot.status]}<ul>{h.snapshot.variants.map(v => <li key={v.id}>{v.name}، {v.code || "بدون کد"}، {v.price === null ? "قیمت نامعلوم" : `${v.price.toLocaleString("fa-IR")} تومان`}</li>)}</ul></li>)}</ol></details>}
     </section>}
     <form className="catalog-filters" onSubmit={e => { e.preventDefault(); void load(); }}><label>جست‌وجوی نام یا کد<input maxLength={120} value={query} onChange={e => setQuery(e.target.value)} /></label><label>وضعیت<select value={status} onChange={e => setStatus(e.target.value)}><option value="">همهٔ وضعیت‌ها</option>{Object.entries(statuses).map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select></label><button disabled={loading || busy}>جست‌وجو</button></form>
-    {loading ? <p role="status">در حال دریافت محصولات…</p> : items.length === 0 ? <div className="empty-work"><h2>محصولی پیدا نشد</h2><p>محصول دستی ثبت کنید یا فیلترهای جست‌وجو را تغییر دهید.</p></div> : <ul className="catalog-list">{items.map(p => <li key={p.id}><div className="catalog-title"><h2>{p.name}</h2><span>{statuses[p.status]}</span><button disabled={busy} onClick={() => void open(p.id)}>مشاهده و ویرایش</button></div><ul>{p.variants.map(v => <li key={v.id}><strong>{v.name}</strong><span>{v.code ? <bdi>{v.code}</bdi> : "بدون کد"}</span><span>{Object.entries(v.attributes).map(([k, value]) => `${k}: ${value}`).join("، ")}</span><span className="catalog-price">{v.price === null ? "قیمت نامعلوم" : `${v.price.toLocaleString("fa-IR")} تومان`}</span></li>)}</ul></li>)}</ul>}
+    {loading ? <p role="status">در حال دریافت محصولات…</p> : items.length === 0 ? <div className="empty-work"><h2>محصولی پیدا نشد</h2><p>محصول دستی ثبت کنید یا فیلترهای جست‌وجو را تغییر دهید.</p></div> : <ul className="catalog-list">{items.map(p => <li key={p.id}><div className="catalog-title"><h2>{p.name || "نام محصول نامعلوم"}</h2><span>{statuses[p.status]}</span><button disabled={busy} onClick={() => void open(p.id)}>مشاهده و ویرایش</button></div><ul>{p.variants.map(v => <li key={v.id}><strong>{v.name}</strong><span>{v.code ? <bdi>{v.code}</bdi> : "بدون کد"}</span><span>{Object.entries(v.attributes).map(([k, value]) => `${k}: ${value}`).join("، ")}</span><span className="catalog-price">{v.price === null ? "قیمت نامعلوم" : `${v.price.toLocaleString("fa-IR")} تومان`}</span></li>)}</ul></li>)}</ul>}
     <div className="catalog-actions">{cursor && <button disabled={loading || busy} onClick={() => void load()}>صفحهٔ نخست</button>}{next && <button disabled={loading || busy} onClick={() => void load(next)}>صفحهٔ بعد</button>}</div>
   </section>;
 }

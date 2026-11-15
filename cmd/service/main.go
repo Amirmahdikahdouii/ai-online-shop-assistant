@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"shopassistant/internal/extraction"
 	"shopassistant/internal/identity"
 	"shopassistant/internal/instagram"
 	"shopassistant/internal/platform"
@@ -50,6 +51,25 @@ func main() {
 	}
 	defer pool.Close()
 	queue := processing.PostgresQueue{Pool: pool}
+	if role == "worker" && config.Mode == "demo" {
+		go func() {
+			worker := extraction.Worker{Queue: extraction.PostgresQueue{Pool: pool}, Extractor: extraction.ScriptedExtractor{}}
+			ticker := time.NewTicker(500 * time.Millisecond)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+					attempt, cancel := context.WithTimeout(ctx, 5*time.Second)
+					if err := worker.ProcessOne(attempt); err != nil {
+						slog.Warn("caption extraction unavailable")
+					}
+					cancel()
+				}
+			}
+		}()
+	}
 	if role == "worker" {
 		go func() {
 			ticker := time.NewTicker(500 * time.Millisecond)
@@ -114,6 +134,7 @@ func main() {
 		mux.Handle("GET /stores/{store}/connection/status", auth)
 		mux.Handle("GET /stores/{store}/processing", auth)
 		mux.Handle("POST /stores/{store}/sample-events", auth)
+		mux.Handle("POST /stores/{store}/post-selections/{selection}/retry", auth)
 		mux.Handle("GET /stores/{store}/posts", auth)
 		mux.Handle("GET /stores/{store}/post-selections", auth)
 		mux.Handle("POST /stores/{store}/post-selections", auth)

@@ -33,7 +33,7 @@ for (const width of [360, 1280]) test(`post multi-selection and recovery at ${wi
   await page.reload();
   await expect(browser.getByRole("checkbox").nth(0)).toBeChecked();
   await expect(browser.getByRole("checkbox").nth(1)).toBeChecked();
-  await expect(browser.getByText("در انتظار پردازش", { exact: true })).toHaveCount(2);
+  await expect(browser.locator(".post-state")).toHaveCount(2);
   const stored = await (await page.request.get(`/api/stores/${store.id}/post-selections`)).json();
   expect(stored.selections).toHaveLength(3);
   expect((await page.request.post(`/api/stores/${store.id}/post-selections`, { headers: { Origin: origin }, data: { postIds: ["demo-page-post-03"], key: "no-csrf-test" } })).status()).toBe(403);

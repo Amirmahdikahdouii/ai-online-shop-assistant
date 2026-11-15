@@ -37,6 +37,9 @@ var catalogSchema string
 //go:embed posts.sql
 var postsSchema string
 
+//go:embed extraction.sql
+var extractionSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -158,6 +161,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, postsSchema); err != nil {
 			return err
 		}
+		version = 8
+	}
+	if version == 8 {
+		if err = validateVersion(ctx, tx, 8); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, extractionSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -170,7 +182,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 8)
+	return validateVersion(ctx, db, 9)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -289,6 +301,21 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 			return errors.New("invalid post selection uniqueness")
 		}
 	}
+	if expected >= 9 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=8 FROM information_schema.columns WHERE table_schema='catalog' AND ((table_name='extraction_jobs' AND ((column_name IN ('selection_id','lease_token','reason') AND data_type='text') OR (column_name='attempts' AND data_type='integer') OR (column_name IN ('available_at','lease_until') AND data_type='timestamp with time zone'))) OR (table_name='post_selections' AND ((column_name='product_id' AND data_type='text') OR (column_name='proposal' AND data_type='jsonb'))))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid extraction schema")
+		}
+		if err := db.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.extraction_jobs'::regclass AND contype='p') AND EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid='catalog.post_selections'::regclass AND contype='u' AND conkey=ARRAY[(SELECT attnum FROM pg_attribute WHERE attrelid='catalog.post_selections'::regclass AND attname='product_id')]::smallint[])`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid extraction uniqueness")
+		}
+	}
+
 	return nil
 }
 
