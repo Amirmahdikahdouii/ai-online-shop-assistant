@@ -152,6 +152,12 @@ func TestPostMappingLifecycle(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
+
+	var catalog struct{ Products []Product }
+	json.Unmarshal(call("GET", base+"/products", "", 0, 200).Body.Bytes(), &catalog)
+	if len(catalog.Products) != 2 {
+		t.Fatalf("mapping must reuse catalog identities, got %d products", len(catalog.Products))
+	}
 	w := call("GET", path, "", 0, 200)
 	var result struct {
 		Mapping struct {
@@ -163,6 +169,54 @@ func TestPostMappingLifecycle(t *testing.T) {
 	json.Unmarshal(w.Body.Bytes(), &result)
 	if result.Mapping.Revision != 2 || !result.Mapping.NotProduct || len(result.History) != 2 || result.History[1].ActorID != users[0] || result.History[1].Source != "manager" || result.History[1].ChangedAt == "" {
 		t.Fatal(w.Body.String())
+	}
+
+	// If extraction won the race, replacing its untouched draft archives that
+	// superseded candidate instead of leaving another active catalog product.
+	auth.Instagram = instagram.Fake{}
+	late := selection("demo-page-post-03", "mapping-late")
+	if e := worker.ProcessOne(ctx); e != nil {
+		t.Fatal(e)
+	}
+	var selections struct{ Selections []SelectedPost }
+	json.Unmarshal(call("GET", base+"/post-selections", "", 0, 200).Body.Bytes(), &selections)
+	var draftID string
+	for _, s := range selections.Selections {
+		if s.SelectionID == late && s.ProductID != nil {
+			draftID = *s.ProductID
+		}
+	}
+	if draftID == "" {
+		t.Fatal("missing extracted draft")
+	}
+	call("POST", base+"/post-selections/"+late+"/mapping", `{"revision":0,"targets":[{"productId":"`+p.ID+`","variantId":""}]}`, 0, 200)
+	var archived struct {
+		Product Product
+		History []any
+	}
+	json.Unmarshal(call("GET", base+"/products/"+draftID, "", 0, 200).Body.Bytes(), &archived)
+	if archived.Product.Status != "archived" || len(archived.History) != 2 {
+		t.Fatal("superseded extraction draft was not archived", archived)
+	}
+
+	edited := selection("demo-page-post-04", "mapping-edited")
+	if e := worker.ProcessOne(ctx); e != nil {
+		t.Fatal(e)
+	}
+	json.Unmarshal(call("GET", base+"/post-selections", "", 0, 200).Body.Bytes(), &selections)
+	for _, s := range selections.Selections {
+		if s.SelectionID == edited && s.ProductID != nil {
+			draftID = *s.ProductID
+		}
+	}
+	var detail struct{ Product Product }
+	json.Unmarshal(call("GET", base+"/products/"+draftID, "", 0, 200).Body.Bytes(), &detail)
+	editBody, _ := json.Marshal(map[string]any{"revision": 1, "name": "اصلاح مدیر", "variants": detail.Product.Variants})
+	call("POST", base+"/products/"+draftID, string(editBody), 0, 200)
+	call("POST", base+"/post-selections/"+edited+"/mapping", `{"revision":0,"notProduct":true,"targets":[]}`, 0, 200)
+	json.Unmarshal(call("GET", base+"/products/"+draftID, "", 0, 200).Body.Bytes(), &detail)
+	if detail.Product.Status != "draft" || detail.Product.Name != "اصلاح مدیر" {
+		t.Fatal("manager-edited draft must be preserved", detail)
 	}
 	call("POST", path, `{"revision":2,"notProduct":true,"targets":[{"productId":"`+p.ID+`","variantId":""}]}`, 0, 422)
 }

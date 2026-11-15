@@ -46,7 +46,7 @@ export default function Extractions({ store, csrf, refresh, onOpen }: { store: s
  <button disabled={loading || !!busy} onClick={() => void load()}>تازه‌سازی استخراج‌ها</button>
  {loading ? <p role="status">در حال دریافت استخراج‌ها…</p> : items.length === 0 ? <p>هنوز پستی برای استخراج انتخاب نشده است. از فهرست بالا پست معرفی محصول را انتخاب و ذخیره کنید.</p> : items.map(s => <article className="extraction-comparison" key={s.selectionId}>
  <div className="extraction-caption"><h3>کپشن منتخب</h3><time dateTime={s.publishedAt}>{new Date(s.publishedAt).toLocaleDateString("fa-IR")}</time><blockquote>{s.caption || "کپشن خالی است."}</blockquote></div>
- <div className="extraction-result"><h3>{states[s.status] || "وضعیت نامشخص"}</h3>
+ <div className="extraction-result"><h3>{s.reason === "manager_mapping" ? "ارتباط مدیر حفظ شد" : states[s.status] || "وضعیت نامشخص"}</h3>
  {(s.status === "pending" || s.status === "processing") && <p>کار ذخیره شده است؛ پس از پایان پردازش، نتیجه اینجا نمایش داده می‌شود.</p>}
  {(s.status === "failed" || s.status === "blocked") && <><p className="field-conflict">{reasons[s.reason] || "استخراج به بررسی نیاز دارد."}</p><button disabled={!!busy} onClick={() => void retry(s.selectionId)}>{busy === s.selectionId ? "در حال ثبت…" : "تکرار استخراج"}</button></>}
  {s.proposal?.outcome === "product" && <><dl><EvidenceField label="نام محصول" field={s.proposal.name} /><EvidenceField label="کد پیشنهادی (برای ثبت، بررسی کنید)" field={s.proposal.code} /><EvidenceField label="قیمت واحد" field={s.proposal.price} money />{Object.entries(s.proposal.attributes).map(([key, field]) => <EvidenceField key={key} label={key} field={field} />)}</dl><p>این نتیجهٔ اولیهٔ استخراج است؛ تغییرات بعدی شما در فرم محصول ثبت می‌شوند.</p></>}

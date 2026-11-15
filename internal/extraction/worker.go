@@ -63,7 +63,8 @@ func (q PostgresQueue) Complete(ctx context.Context, t Task, p Proposal) error {
 	}
 	defer tx.Rollback(ctx)
 	var store, actor string
-	err = tx.QueryRow(ctx, `SELECT s.store_id,s.actor_id FROM catalog.extraction_jobs j JOIN catalog.post_selections s ON s.id=j.selection_id WHERE j.selection_id=$1 AND j.lease_token=$2 AND j.lease_until>clock_timestamp() AND s.status='processing' FOR UPDATE OF j,s`, t.SourceID, t.Token).Scan(&store, &actor)
+	var mappingRevision int
+	err = tx.QueryRow(ctx, `SELECT s.store_id,s.actor_id,s.mapping_revision FROM catalog.extraction_jobs j JOIN catalog.post_selections s ON s.id=j.selection_id WHERE j.selection_id=$1 AND j.lease_token=$2 AND j.lease_until>clock_timestamp() AND s.status='processing' FOR UPDATE OF j,s`, t.SourceID, t.Token).Scan(&store, &actor, &mappingRevision)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return ErrLease
 	}
@@ -72,7 +73,9 @@ func (q PostgresQueue) Complete(ctx context.Context, t Task, p Proposal) error {
 	}
 	var productID *string
 	status := "blocked"
-	if p.Outcome == "product" {
+	// A manager-resolved post reuses catalog identities; it must not materialize
+	// a competing draft when an already-running extraction settles.
+	if p.Outcome == "product" && mappingRevision == 0 {
 		id := platform.ID()
 		productID = &id
 		status = "completed"
@@ -107,11 +110,15 @@ func (q PostgresQueue) Complete(ctx context.Context, t Task, p Proposal) error {
 			return err
 		}
 	}
+	reason := p.Outcome
+	if mappingRevision > 0 {
+		status, reason = "completed", "manager_mapping"
+	}
 	raw, _ := json.Marshal(p)
 	if _, err = tx.Exec(ctx, `UPDATE catalog.post_selections SET status=$2,product_id=$3,proposal=$4 WHERE id=$1`, t.SourceID, status, productID, raw); err != nil {
 		return err
 	}
-	if _, err = tx.Exec(ctx, `UPDATE catalog.extraction_jobs SET lease_token=NULL,lease_until=NULL,reason=$2 WHERE selection_id=$1`, t.SourceID, p.Outcome); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE catalog.extraction_jobs SET lease_token=NULL,lease_until=NULL,reason=$2 WHERE selection_id=$1`, t.SourceID, reason); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)

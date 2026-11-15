@@ -163,6 +163,17 @@ test("browser → API → PostgreSQL, migrations, restart persistence and outage
   }
   await expect.poll(() => healthStatus(request)).toBe(200);
 
+  // A surviving version marker must not hide damaged mapping audit storage.
+  try {
+    compose("exec", "-T", "postgres", "psql", "-U", "shop", "-d", "shop_demo", "-c",
+      "ALTER TABLE catalog.post_mapping_changes RENAME COLUMN actor_id TO broken_actor");
+    expect((await request.get("/api/health")).status()).toBe(503);
+  } finally {
+    compose("exec", "-T", "postgres", "psql", "-U", "shop", "-d", "shop_demo", "-c",
+      "ALTER TABLE catalog.post_mapping_changes RENAME COLUMN broken_actor TO actor_id");
+  }
+  await expect.poll(() => healthStatus(request)).toBe(200);
+
   try {
     compose("stop", "postgres");
     await page.getByRole("button", { name: "بررسی دوباره" }).click();

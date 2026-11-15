@@ -34,8 +34,9 @@ func (a *Auth) postMapping(w http.ResponseWriter, r *http.Request, user, store, 
 	}
 	defer tx.Rollback(ctx)
 	var saved PostMapping
+	var extractedProduct *string
 	// Serialize manager decisions on the selection. Extraction never writes these fields.
-	err = tx.QueryRow(ctx, `SELECT s.mapping_revision,s.mapping_not_product,s.mapping_targets FROM catalog.post_selections s JOIN shops.memberships m ON m.store_id=s.store_id WHERE s.id=$1 AND s.store_id=$2 AND m.user_id=$3 FOR UPDATE OF s`, id, store, user).Scan(&saved.Revision, &saved.NotProduct, &saved.Targets)
+	err = tx.QueryRow(ctx, `SELECT s.mapping_revision,s.mapping_not_product,s.mapping_targets,s.product_id FROM catalog.post_selections s JOIN shops.memberships m ON m.store_id=s.store_id WHERE s.id=$1 AND s.store_id=$2 AND m.user_id=$3 FOR UPDATE OF s`, id, store, user).Scan(&saved.Revision, &saved.NotProduct, &saved.Targets, &extractedProduct)
 	if errors.Is(err, pgx.ErrNoRows) {
 		fail(404, "not_found")
 		return
@@ -149,6 +150,36 @@ func (a *Auth) postMapping(w http.ResponseWriter, r *http.Request, user, store, 
 	if _, err = tx.Exec(ctx, `INSERT INTO catalog.post_mapping_changes(selection_id,revision,actor_id,source,snapshot) VALUES($1,$2,$3,'manager',$4)`, id, input.Revision, user, snapshot); err != nil {
 		fail(503, "mapping_unavailable")
 		return
+	}
+
+	// Retire only the untouched machine-created candidate when the manager
+	// explicitly chooses another identity (or no product). Human edits and
+	// candidates reused by another post remain available.
+	if extractedProduct != nil {
+		retained := false
+		for _, target := range input.Targets {
+			if target.ProductID == *extractedProduct {
+				retained = true
+			}
+		}
+		if !retained {
+			var archived Product
+			err = tx.QueryRow(ctx, `UPDATE catalog.products p SET status='archived',revision=2,updated_at=clock_timestamp()
+       WHERE p.id=$1 AND p.store_id=$2 AND p.status='draft' AND p.revision=1
+       AND NOT EXISTS (SELECT 1 FROM catalog.post_selections s, jsonb_array_elements(s.mapping_targets) t WHERE s.store_id=$2 AND t->>'productId'=p.id)
+       RETURNING id,name,status,revision,variants`, *extractedProduct, store).Scan(&archived.ID, &archived.Name, &archived.Status, &archived.Revision, &archived.Variants)
+			if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+				fail(503, "mapping_unavailable")
+				return
+			}
+			if err == nil {
+				raw, _ := json.Marshal(archived)
+				if _, err = tx.Exec(ctx, `INSERT INTO catalog.history(product_id,revision,actor_id,snapshot) VALUES($1,$2,$3,$4)`, archived.ID, archived.Revision, user, raw); err != nil {
+					fail(503, "mapping_unavailable")
+					return
+				}
+			}
+		}
 	}
 	if tx.Commit(ctx) != nil {
 		fail(503, "mapping_unavailable")

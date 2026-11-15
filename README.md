@@ -202,7 +202,11 @@ whole-product/variant targets are rejected. Up to 100 targets are supported.
 GET returns the current `mapping` and immutable `history` with manager ID, source,
 time and complete snapshots. Extraction provenance (`productId`/proposal) remains
 separate from the manager's reusable decision, so later extraction never replaces
-it. Product detail sources include currently mapped posts as well as the original
+it. When a manager has already resolved the post, an in-flight extraction
+retains its evidence but creates no competing draft. If extraction finished first, a superseded untouched draft (revision 1) is
+archived with a manager-attributed history entry in the mapping transaction.
+Human-edited drafts and drafts mapped by another post are preserved; no product
+is deleted. Product detail sources include currently mapped posts as well as the original
 extraction evidence. Mapping saves create no products or orders.
 
 Schema v10 stores `mapping_*` on the selection and appends

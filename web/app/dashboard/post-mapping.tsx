@@ -41,6 +41,7 @@ export default function PostMapping({ store, selection, csrf }: { store: string;
  const r = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": csrf }, body: JSON.stringify(mapping) }); const d = await r.json();
  if (!r.ok) { setError(d.code === "revision_conflict" ? "ارتباط توسط مدیر تغییر کرده است. بارگیری مجدد را بزنید و انتخاب‌ها را بررسی کنید." : "ارتباط ذخیره نشد؛ محصول و تنوع معتبر همین فروشگاه را انتخاب کنید."); return; }
  setMapping(d.mapping); setSaved(d.mapping); setSuccess("ارتباط پست ذخیره شد.");
+ await search();
  // The save has committed; history refresh failure must not imply save failure.
  try { const detail = await fetch(url, { cache: "no-store" }); if (!detail.ok) throw new Error(); setHistory((await detail.json()).history); } catch { setError("ارتباط ذخیره شد؛ تاریخچه دریافت نشد. بارگیری مجدد را بزنید."); }
  } catch { setError("پاسخ ذخیره دریافت نشد؛ دوباره ذخیره کنید یا بارگیری مجدد را بزنید."); }
@@ -49,7 +50,7 @@ export default function PostMapping({ store, selection, csrf }: { store: string;
  const label = (t: Target) => { const p = known[t.productId], v = p?.variants.find(v => v.id === t.variantId); return p ? `${p.name} — ${v ? `${v.name}، ${v.code || "بدون کد"}` : "محصول، بدون تعیین تنوع"}${p.status === "draft" ? " (پیش‌نویس)" : p.status === "archived" ? " (بایگانی‌شده)" : ""}` : t.productId; };
  return <section className="post-mapping" aria-label="ارتباط پست با محصول">
  <button onClick={() => setOpen(!open)} aria-expanded={open}>{open ? "بستن ارتباط محصولات" : "انتخاب یا اصلاح ارتباط محصولات"}</button>
- {open && <><h3 ref={heading} tabIndex={-1}>محصول‌های این پست</h3><p>چند انتخاب، نامزدهای این پست را مشخص می‌کند؛ به معنی سفارش همهٔ اقلام نیست. محصول پیش‌نویس تا تأیید، قلم قطعی سفارش نمی‌شود.</p>
+ {open && <><h3 ref={heading} tabIndex={-1}>محصول‌های این پست</h3><p>چند انتخاب، نامزدهای این پست را مشخص می‌کند؛ به معنی سفارش همهٔ اقلام نیست. محصول پیش‌نویس تا تأیید، قلم قطعی سفارش نمی‌شود.</p><p>با انتخاب محصول دیگری یا «این پست محصول نیست»، پیش‌نویس استخراج‌شدهٔ بدون ویرایش بایگانی می‌شود؛ محصولی که ویرایش کرده‌اید حفظ می‌شود.</p>
  {error && <p role="alert" className="inline-error">{error}</p>}{success && <p role="status" className="post-success">{success}</p>}
  <button disabled={busy} onClick={() => { void load(); }}>بارگیری مجدد ارتباط و تاریخچه</button>
  {busy && <p role="status">در حال دریافت یا ذخیرهٔ ارتباط…</p>}

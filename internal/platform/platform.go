@@ -314,7 +314,7 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 	}
 	if expected >= 10 {
-		if err := db.QueryRow(ctx, `SELECT count(*)=4 FROM information_schema.columns WHERE table_schema='catalog' AND ((table_name='post_selections' AND column_name IN ('mapping_revision','mapping_not_product','mapping_targets')) OR (table_name='post_mapping_changes' AND column_name='snapshot'))`).Scan(&valid); err != nil {
+		if err := db.QueryRow(ctx, `SELECT count(*)=9 FROM information_schema.columns WHERE table_schema='catalog' AND ((table_name='post_selections' AND ((column_name='mapping_revision' AND data_type='integer') OR (column_name='mapping_not_product' AND data_type='boolean') OR (column_name='mapping_targets' AND data_type='jsonb'))) OR (table_name='post_mapping_changes' AND ((column_name IN ('selection_id','actor_id','source') AND data_type='text') OR (column_name='revision' AND data_type='integer') OR (column_name='changed_at' AND data_type='timestamp with time zone') OR (column_name='snapshot' AND data_type='jsonb'))))`).Scan(&valid); err != nil {
 			return err
 		}
 		if !valid {
