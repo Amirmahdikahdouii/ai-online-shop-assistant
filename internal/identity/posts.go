@@ -17,13 +17,17 @@ import (
 
 type SelectedPost struct {
 	instagram.Post
-	ProductID   *string              `json:"productId"`
-	Proposal    *extraction.Proposal `json:"proposal"`
-	Reason      string               `json:"reason"`
-	Attempts    int                  `json:"attempts"`
-	SelectionID string               `json:"selectionId"`
-	Status      string               `json:"status"`
-	SelectedAt  time.Time            `json:"selectedAt"`
+	ProductID       *string                   `json:"productId"`
+	Proposal        *extraction.Proposal      `json:"proposal"`
+	Reason          string                    `json:"reason"`
+	Attempts        int                       `json:"attempts"`
+	SelectionID     string                    `json:"selectionId"`
+	Status          string                    `json:"status"`
+	SelectedAt      time.Time                 `json:"selectedAt"`
+	MatchStatus     string                    `json:"matchStatus"`
+	MatchEvidence   *extraction.MatchEvidence `json:"matchEvidence"`
+	MappingTargets  []PostTarget              `json:"mappingTargets"`
+	MappingRevision int                       `json:"mappingRevision"`
 }
 
 func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store, resource string, reply func(int, map[string]any), fail func(int, string)) {
@@ -39,7 +43,7 @@ func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store,
 	}
 	if r.Method == "GET" && resource == "post-selections" {
 		cursor := r.URL.Query().Get("cursor")
-		rows, err := a.Pool.Query(ctx, `SELECT s.id,s.post_id,s.caption,s.published_at,s.status,s.selected_at,s.product_id,s.proposal,coalesce(j.reason,'queued'),coalesce(j.attempts,0) FROM catalog.post_selections s LEFT JOIN catalog.extraction_jobs j ON j.selection_id=s.id WHERE s.store_id=$1 AND ($2='' OR s.id>$2) ORDER BY s.id LIMIT 21`, store, cursor)
+		rows, err := a.Pool.Query(ctx, `SELECT s.id,s.post_id,s.caption,s.published_at,s.status,s.selected_at,s.product_id,s.proposal,coalesce(j.reason,'queued'),coalesce(j.attempts,0),s.match_status,s.match_evidence,s.mapping_targets,s.mapping_revision FROM catalog.post_selections s LEFT JOIN catalog.extraction_jobs j ON j.selection_id=s.id WHERE s.store_id=$1 AND ($2='' OR s.id>$2) ORDER BY s.id LIMIT 21`, store, cursor)
 		if err != nil {
 			fail(503, "posts_unavailable")
 			return
@@ -48,9 +52,16 @@ func (a *Auth) postsRequest(w http.ResponseWriter, r *http.Request, user, store,
 		items := []SelectedPost{}
 		for rows.Next() {
 			var p SelectedPost
-			if rows.Scan(&p.SelectionID, &p.ID, &p.Caption, &p.PublishedAt, &p.Status, &p.SelectedAt, &p.ProductID, &p.Proposal, &p.Reason, &p.Attempts) != nil {
+			var targets json.RawMessage
+			if rows.Scan(&p.SelectionID, &p.ID, &p.Caption, &p.PublishedAt, &p.Status, &p.SelectedAt, &p.ProductID, &p.Proposal, &p.Reason, &p.Attempts, &p.MatchStatus, &p.MatchEvidence, &targets, &p.MappingRevision) != nil {
 				fail(503, "posts_unavailable")
 				return
+			}
+			if len(targets) > 0 {
+				_ = json.Unmarshal(targets, &p.MappingTargets)
+			}
+			if p.MappingTargets == nil {
+				p.MappingTargets = []PostTarget{}
 			}
 			items = append(items, p)
 		}

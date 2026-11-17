@@ -43,6 +43,9 @@ var extractionSchema string
 //go:embed post_mapping.sql
 var postMappingSchema string
 
+//go:embed auto_matching.sql
+var autoMatchingSchema string
+
 type Config struct {
 	Mode string
 	DB   *pgxpool.Config
@@ -182,6 +185,15 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) error {
 		if _, err = tx.Exec(ctx, postMappingSchema); err != nil {
 			return err
 		}
+		version = 10
+	}
+	if version == 10 {
+		if err = validateVersion(ctx, tx, 10); err != nil {
+			return err
+		}
+		if _, err = tx.Exec(ctx, autoMatchingSchema); err != nil {
+			return err
+		}
 	}
 	if err = validate(ctx, tx); err != nil {
 		return err
@@ -194,7 +206,7 @@ type querier interface {
 }
 
 func validate(ctx context.Context, db querier) error {
-	return validateVersion(ctx, db, 10)
+	return validateVersion(ctx, db, 11)
 }
 
 func validateVersion(ctx context.Context, db querier, expected int) error {
@@ -319,6 +331,14 @@ func validateVersion(ctx context.Context, db querier, expected int) error {
 		}
 		if !valid {
 			return errors.New("invalid post mapping schema")
+		}
+	}
+	if expected >= 11 {
+		if err := db.QueryRow(ctx, `SELECT count(*)=2 FROM information_schema.columns WHERE table_schema='catalog' AND table_name='post_selections' AND ((column_name='match_status' AND data_type='text') OR (column_name='match_evidence' AND data_type='jsonb'))`).Scan(&valid); err != nil {
+			return err
+		}
+		if !valid {
+			return errors.New("invalid auto matching schema")
 		}
 	}
 	if expected >= 9 {

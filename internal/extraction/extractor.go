@@ -38,6 +38,23 @@ type Proposal struct {
 	Policy     string           `json:"policy"`
 }
 
+type MatchCandidate struct {
+	ProductID   string `json:"productId"`
+	ProductName string `json:"productName"`
+	VariantID   string `json:"variantId,omitempty"`
+	VariantName string `json:"variantName,omitempty"`
+	Code        string `json:"code,omitempty"`
+}
+
+type MatchEvidence struct {
+	Reason     string           `json:"reason"`
+	Summary    string           `json:"summary"`
+	Policy     string           `json:"policy"`
+	Model      string           `json:"model"`
+	Quotes     []string         `json:"quotes"`
+	Candidates []MatchCandidate `json:"candidates,omitempty"`
+}
+
 // Metadata comes from server-side adapter configuration, never model output or
 // source text, so attempt logs can identify the model without exposing captions.
 type Metadata struct {
@@ -159,6 +176,33 @@ func (ScriptedExtractor) Extract(ctx context.Context, in Input) (Proposal, error
 	case "پست قدیمی: پالتوی زمستانی خاکستری، سایز ۴۰ و ۴۲.":
 		p.Name = known(in, "پالتوی زمستانی خاکستری", "پالتوی زمستانی خاکستری")
 		p.Attributes["سایز"] = known(in, "۴۰ و ۴۲", "سایز ۴۰ و ۴۲")
+	case "پیراهن لینن نورا؛ کد LIN-01، خنک و تابستانی. قیمت ۵۲۰٬۰۰۰ تومان.":
+		p.Name = known(in, "پیراهن لینن نورا", "پیراهن لینن نورا")
+		p.Code = known(in, "LIN-01", "LIN-01")
+		p.Price = known(in, "520000", "قیمت ۵۲۰٬۰۰۰ تومان")
+		p.Attributes["مدل"] = known(in, "خنک و تابستانی", "خنک و تابستانی")
+	case "شارژ مجدد پیراهن لینن نورا؛ کد LIN-01 دوباره موجود شد. ارسال فوری.":
+		p.Name = known(in, "پیراهن لینن نورا", "پیراهن لینن نورا")
+		p.Code = known(in, "LIN-01", "LIN-01")
+	case "کت جین پاییزه؛ کد UNK-99، تک‌رنگ آبی تیره. قیمت ۹۸۰٬۰۰۰ تومان.":
+		p.Name = known(in, "کت جین پاییزه", "کت جین پاییزه")
+		p.Code = known(in, "UNK-99", "UNK-99")
+		p.Price = known(in, "980000", "قیمت ۹۸۰٬۰۰۰ تومان")
+	case "پیراهن لینن نورا آستین کوتاه؛ رنگ خردلی، سایز بزرگ.":
+		p.Name = known(in, "پیراهن لینن نورا آستین کوتاه", "پیراهن لینن نورا آستین کوتاه")
+		p.Attributes["مدل"] = known(in, "آستین کوتاه", "آستین کوتاه")
+		p.Attributes["رنگ"] = known(in, "خردلی", "رنگ خردلی")
+	case "ست مانتو لینن نارون و شال نخی ساده؛ ترکیب رنگ زیتونی و سفید.":
+		p.Name = known(in, "ست مانتو لینن نارون و شال نخی ساده", "ست مانتو لینن نارون و شال نخی ساده")
+		p.Attributes["رنگ"] = known(in, "زیتونی و سفید", "ترکیب رنگ زیتونی و سفید")
+	case "شومیز حریر مجلسی؛ رنگ مشکی در متن و قرمز در استوری، سایز ۳۸.":
+		p.Name = known(in, "شومیز حریر مجلسی", "شومیز حریر مجلسی")
+		p.Attributes["رنگ"] = Field{
+			State:   "conflict",
+			Values:  []string{"مشکی", "قرمز"},
+			Sources: []Source{{ID: in.SourceID, Quote: "رنگ مشکی"}, {ID: in.SourceID, Quote: "قرمز"}},
+		}
+		p.Attributes["سایز"] = known(in, "۳۸", "سایز ۳۸")
 	default:
 		p.Outcome = "no_product"
 	}

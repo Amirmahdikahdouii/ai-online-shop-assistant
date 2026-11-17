@@ -4,7 +4,9 @@ import { useEffect, useRef, useState } from "react";
 
 type Field = { state: "known" | "unknown" | "conflict"; values: string[]; sources: { id: string; quote: string }[] };
 export type Proposal = { outcome: string; name: Field; code: Field; price: Field; attributes: Record<string, Field> };
-type Selection = { selectionId: string; caption: string; publishedAt: string; selectedAt: string; status: string; reason: string; attempts: number; productId: string | null; proposal: Proposal | null };
+type Candidate = { productId: string; productName: string; variantId?: string; variantName?: string; code?: string };
+type MatchEvidence = { reason: string; summary: string; policy: string; model: string; quotes: string[]; candidates?: Candidate[] };
+type Selection = { selectionId: string; caption: string; publishedAt: string; selectedAt: string; status: string; reason: string; attempts: number; productId: string | null; proposal: Proposal | null; matchStatus: "matched" | "unresolved" | "none"; matchEvidence: MatchEvidence | null; mappingRevision: number };
 const states: Record<string, string> = { pending: "در انتظار استخراج", processing: "در حال استخراج", completed: "پیش‌نویس ساخته شد", failed: "استخراج ناموفق", blocked: "نیازمند رسیدگی" };
 const reasons: Record<string, string> = { timeout: "زمان استخراج تمام شد.", invalid_output: "نتیجهٔ استخراج معتبر نبود؛ محصولی ساخته نشد.", refused: "استخراج‌کننده پاسخی ارائه نکرد.", unavailable: "سرویس استخراج در دسترس نیست؛ پس از رفع مشکل دوباره تلاش کنید.", provider_error: "ارتباط با سرویس استخراج برقرار نشد.", no_product: "محصول مشخصی استخراج نشد؛ کپشن را بررسی کنید یا محصول را دستی ثبت کنید." };
 export function EvidenceField({ label, field, money = false }: { label: string; field: Field; money?: boolean }) {
@@ -46,9 +48,24 @@ export default function Extractions({ store, csrf, refresh, onOpen }: { store: s
  <button disabled={loading || !!busy} onClick={() => void load()}>تازه‌سازی استخراج‌ها</button>
  {loading ? <p role="status">در حال دریافت استخراج‌ها…</p> : items.length === 0 ? <p>هنوز پستی برای استخراج انتخاب نشده است. از فهرست بالا پست معرفی محصول را انتخاب و ذخیره کنید.</p> : items.map(s => <article className="extraction-comparison" key={s.selectionId}>
  <div className="extraction-caption"><h3>کپشن منتخب</h3><time dateTime={s.publishedAt}>{new Date(s.publishedAt).toLocaleDateString("fa-IR")}</time><blockquote>{s.caption || "کپشن خالی است."}</blockquote></div>
- <div className="extraction-result"><h3>{s.reason === "manager_mapping" ? "ارتباط مدیر حفظ شد" : states[s.status] || "وضعیت نامشخص"}</h3>
+ <div className="extraction-result"><h3>
+  {s.reason === "manager_mapping" ? "ارتباط مدیر حفظ شد" : states[s.status] || "وضعیت نامشخص"}
+  {s.matchStatus === "matched" && <span className="match-status-badge match-status-matched">تطبیق شد</span>}
+  {s.matchStatus === "unresolved" && <span className="match-status-badge match-status-unresolved">نیاز به بررسی</span>}
+ </h3>
  {(s.status === "pending" || s.status === "processing") && <p>کار ذخیره شده است؛ پس از پایان پردازش، نتیجه اینجا نمایش داده می‌شود.</p>}
  {(s.status === "failed" || s.status === "blocked") && <><p className="field-conflict">{reasons[s.reason] || "استخراج به بررسی نیاز دارد."}</p><button disabled={!!busy} onClick={() => void retry(s.selectionId)}>{busy === s.selectionId ? "در حال ثبت…" : "تکرار استخراج"}</button></>}
+ {s.matchEvidence && <div className="match-evidence-box">
+  <p className="match-summary"><strong>دلیل تطبیق:</strong> {s.matchEvidence.summary}</p>
+  <details className="match-details">
+   <summary>نمایش شواهد و جزییات تطبیق</summary>
+   <div className="match-details-content">
+    {s.matchEvidence.quotes && s.matchEvidence.quotes.length > 0 && <div className="match-quotes"><strong>شواهد از متن:</strong><ul>{s.matchEvidence.quotes.map((q, idx) => <li key={idx}>«{q}»</li>)}</ul></div>}
+    {s.matchEvidence.candidates && s.matchEvidence.candidates.length > 0 && <div className="match-candidates"><strong>نامزدهای کاتالوگ:</strong><ul>{s.matchEvidence.candidates.map((c, idx) => <li key={idx}>{c.productName}{c.variantName ? ` — ${c.variantName}` : ""}{c.code ? ` (کد: ${c.code})` : ""}</li>)}</ul></div>}
+    <small className="match-meta">نسخهٔ سیاست: {s.matchEvidence.policy} | مدل: {s.matchEvidence.model}</small>
+   </div>
+  </details>
+ </div>}
  {s.proposal?.outcome === "product" && <><dl><EvidenceField label="نام محصول" field={s.proposal.name} /><EvidenceField label="کد پیشنهادی (برای ثبت، بررسی کنید)" field={s.proposal.code} /><EvidenceField label="قیمت واحد" field={s.proposal.price} money />{Object.entries(s.proposal.attributes).map(([key, field]) => <EvidenceField key={key} label={key} field={field} />)}</dl><p>این نتیجهٔ اولیهٔ استخراج است؛ تغییرات بعدی شما در فرم محصول ثبت می‌شوند.</p></>}
  {s.productId && <button onClick={() => onOpen(s.productId!)}>بررسی و ویرایش محصول</button>}
  <PostMapping store={store} selection={s.selectionId} csrf={csrf} />

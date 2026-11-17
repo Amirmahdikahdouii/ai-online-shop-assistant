@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"strconv"
+	"strings"
 	"time"
 	"unicode/utf8"
 
@@ -14,6 +16,296 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"shopassistant/internal/platform"
 )
+
+type MatchTarget struct {
+	ProductID string `json:"productId"`
+	VariantID string `json:"variantId"`
+}
+
+type catalogVariant struct {
+	ID         string            `json:"id"`
+	Name       string            `json:"name"`
+	Code       *string           `json:"code"`
+	Price      *int64            `json:"price"`
+	Attributes map[string]string `json:"attributes"`
+}
+
+type catalogProduct struct {
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Status   string           `json:"status"`
+	Revision int              `json:"revision"`
+	Variants []catalogVariant `json:"variants"`
+}
+
+func matchPost(ctx context.Context, tx pgx.Tx, store string, caption string, p Proposal) (string, *MatchEvidence, []MatchTarget, error) {
+	if p.Outcome != "product" {
+		return "none", nil, nil, nil
+	}
+
+	hasConflict := p.Name.State == "conflict" || p.Code.State == "conflict"
+	var conflictQuotes []string
+	for _, f := range p.Attributes {
+		if f.State == "conflict" {
+			hasConflict = true
+			for _, s := range f.Sources {
+				conflictQuotes = append(conflictQuotes, s.Quote)
+			}
+		}
+	}
+	if hasConflict {
+		for _, s := range p.Name.Sources {
+			conflictQuotes = append(conflictQuotes, s.Quote)
+		}
+		for _, s := range p.Code.Sources {
+			conflictQuotes = append(conflictQuotes, s.Quote)
+		}
+		return "unresolved", &MatchEvidence{
+			Reason:  "conflicting_attributes",
+			Summary: "ویژگی‌های متعارض در استخراج محصول یافت شد.",
+			Policy:  p.Policy,
+			Model:   p.Model,
+			Quotes:  conflictQuotes,
+		}, nil, nil
+	}
+
+	// Priority 2: Explicit Code
+	if p.Code.State == "known" && len(p.Code.Values) > 0 && strings.TrimSpace(p.Code.Values[0]) != "" {
+		code := strings.ToUpper(strings.TrimSpace(p.Code.Values[0]))
+		quotes := []string{}
+		for _, s := range p.Code.Sources {
+			quotes = append(quotes, s.Quote)
+		}
+
+		rows, err := tx.Query(ctx, `SELECT id, name, status, revision, variants FROM catalog.products WHERE store_id=$1 AND status='approved' AND EXISTS (SELECT 1 FROM jsonb_array_elements(variants) v WHERE upper(coalesce(v->>'code','')) = $2)`, store, code)
+		if err != nil {
+			return "", nil, nil, err
+		}
+		defer rows.Close()
+
+		var matchedProducts []catalogProduct
+		var matchedVariants []catalogVariant
+		for rows.Next() {
+			var prod catalogProduct
+			if err := rows.Scan(&prod.ID, &prod.Name, &prod.Status, &prod.Revision, &prod.Variants); err != nil {
+				return "", nil, nil, err
+			}
+			for _, v := range prod.Variants {
+				if v.Code != nil && strings.ToUpper(strings.TrimSpace(*v.Code)) == code {
+					matchedProducts = append(matchedProducts, prod)
+					matchedVariants = append(matchedVariants, v)
+				}
+			}
+		}
+		if rows.Err() != nil {
+			return "", nil, nil, rows.Err()
+		}
+
+		if len(matchedProducts) == 0 {
+			return "unresolved", &MatchEvidence{
+				Reason:     "unknown_code",
+				Summary:    fmt.Sprintf("کد «%s» در کاتالوگ فروشگاه یافت نشد.", code),
+				Policy:     p.Policy,
+				Model:      p.Model,
+				Quotes:     quotes,
+				Candidates: []MatchCandidate{},
+			}, nil, nil
+		}
+
+		if len(matchedProducts) > 1 {
+			var candidates []MatchCandidate
+			for i, prod := range matchedProducts {
+				candidates = append(candidates, MatchCandidate{
+					ProductID:   prod.ID,
+					ProductName: prod.Name,
+					VariantID:   matchedVariants[i].ID,
+					VariantName: matchedVariants[i].Name,
+					Code:        code,
+				})
+			}
+			return "unresolved", &MatchEvidence{
+				Reason:     "multiple_candidates",
+				Summary:    fmt.Sprintf("چند محصول با کد «%s» در کاتالوگ یافت شد.", code),
+				Policy:     p.Policy,
+				Model:      p.Model,
+				Quotes:     quotes,
+				Candidates: candidates,
+			}, nil, nil
+		}
+
+		prod := matchedProducts[0]
+		variant := matchedVariants[0]
+
+		contradiction := false
+		for k, f := range p.Attributes {
+			if f.State == "known" && len(f.Values) > 0 {
+				val := f.Values[0]
+				if varVal, ok := variant.Attributes[k]; ok {
+					if strings.TrimSpace(varVal) != strings.TrimSpace(val) {
+						contradiction = true
+						break
+					}
+				}
+			}
+		}
+		if contradiction {
+			return "unresolved", &MatchEvidence{
+				Reason:  "conflicting_attributes",
+				Summary: "کد صریح منطبق است اما مشخصات محصول با کاتالوگ مغایرت دارد.",
+				Policy:  p.Policy,
+				Model:   p.Model,
+				Quotes:  quotes,
+				Candidates: []MatchCandidate{{
+					ProductID:   prod.ID,
+					ProductName: prod.Name,
+					VariantID:   variant.ID,
+					VariantName: variant.Name,
+					Code:        code,
+				}},
+			}, nil, nil
+		}
+
+		return "matched", &MatchEvidence{
+			Reason:  "explicit_code",
+			Summary: fmt.Sprintf("تطبیق خودکار با کد صریح «%s»", code),
+			Policy:  p.Policy,
+			Model:   p.Model,
+			Quotes:  quotes,
+			Candidates: []MatchCandidate{{
+				ProductID:   prod.ID,
+				ProductName: prod.Name,
+				VariantID:   variant.ID,
+				VariantName: variant.Name,
+				Code:        code,
+			}},
+		}, []MatchTarget{{ProductID: prod.ID, VariantID: variant.ID}}, nil
+	}
+
+	// Priority 3: Caption / Context
+	rows, err := tx.Query(ctx, `SELECT id, name, status, revision, variants FROM catalog.products WHERE store_id=$1 AND status='approved' ORDER BY id`, store)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	defer rows.Close()
+
+	var allApproved []catalogProduct
+	for rows.Next() {
+		var prod catalogProduct
+		if err := rows.Scan(&prod.ID, &prod.Name, &prod.Status, &prod.Revision, &prod.Variants); err != nil {
+			return "", nil, nil, err
+		}
+		allApproved = append(allApproved, prod)
+	}
+	if rows.Err() != nil {
+		return "", nil, nil, rows.Err()
+	}
+
+	extractedName := ""
+	nameQuotes := []string{}
+	if p.Name.State == "known" && len(p.Name.Values) > 0 {
+		extractedName = strings.TrimSpace(p.Name.Values[0])
+		for _, s := range p.Name.Sources {
+			nameQuotes = append(nameQuotes, s.Quote)
+		}
+	}
+
+	var mentionedInCaption []catalogProduct
+	for _, prod := range allApproved {
+		trimmedName := strings.TrimSpace(prod.Name)
+		if trimmedName != "" && strings.Contains(caption, trimmedName) {
+			mentionedInCaption = append(mentionedInCaption, prod)
+		}
+	}
+	if len(mentionedInCaption) > 1 {
+		var candidates []MatchCandidate
+		for _, prod := range mentionedInCaption {
+			candidates = append(candidates, MatchCandidate{
+				ProductID:   prod.ID,
+				ProductName: prod.Name,
+			})
+		}
+		return "unresolved", &MatchEvidence{
+			Reason:     "multiple_candidates",
+			Summary:    "پست چندمحصولی؛ چند محصول در کاتالوگ شناسایی شدند.",
+			Policy:     p.Policy,
+			Model:      p.Model,
+			Quotes:     nameQuotes,
+			Candidates: candidates,
+		}, nil, nil
+	}
+
+	var exactMatches []catalogProduct
+	for _, prod := range allApproved {
+		if strings.TrimSpace(prod.Name) == extractedName {
+			exactMatches = append(exactMatches, prod)
+		}
+	}
+	if len(exactMatches) == 1 {
+		prod := exactMatches[0]
+		targetVarID := ""
+		if len(prod.Variants) == 1 {
+			targetVarID = prod.Variants[0].ID
+		} else {
+			for _, v := range prod.Variants {
+				varMatch := true
+				for k, f := range p.Attributes {
+					if f.State == "known" && len(f.Values) > 0 {
+						if vVal, ok := v.Attributes[k]; !ok || strings.TrimSpace(vVal) != strings.TrimSpace(f.Values[0]) {
+							varMatch = false
+							break
+						}
+					}
+				}
+				if varMatch {
+					targetVarID = v.ID
+					break
+				}
+			}
+		}
+
+		return "matched", &MatchEvidence{
+			Reason:  "caption_context",
+			Summary: fmt.Sprintf("تطبیق خودکار از روی کپشن و مشخصات با محصول «%s»", prod.Name),
+			Policy:  p.Policy,
+			Model:   p.Model,
+			Quotes:  nameQuotes,
+			Candidates: []MatchCandidate{{
+				ProductID:   prod.ID,
+				ProductName: prod.Name,
+				VariantID:   targetVarID,
+			}},
+		}, []MatchTarget{{ProductID: prod.ID, VariantID: targetVarID}}, nil
+	}
+
+	var similarMatches []catalogProduct
+	for _, prod := range allApproved {
+		pName := strings.TrimSpace(prod.Name)
+		if extractedName != "" && pName != "" && extractedName != pName {
+			if strings.Contains(extractedName, pName) || strings.Contains(pName, extractedName) {
+				similarMatches = append(similarMatches, prod)
+			}
+		}
+	}
+	if len(similarMatches) > 0 {
+		var candidates []MatchCandidate
+		for _, prod := range similarMatches {
+			candidates = append(candidates, MatchCandidate{
+				ProductID:   prod.ID,
+				ProductName: prod.Name,
+			})
+		}
+		return "unresolved", &MatchEvidence{
+			Reason:     "similarity_only",
+			Summary:    fmt.Sprintf("شباهت ظاهری با محصول «%s» بدون تطبیق قطعی؛ برای جلوگیری از ادغام اشتباه نیازمند بررسی مدیر است.", similarMatches[0].Name),
+			Policy:     p.Policy,
+			Model:      p.Model,
+			Quotes:     nameQuotes,
+			Candidates: candidates,
+		}, nil, nil
+	}
+
+	return "none", nil, nil, nil
+}
 
 var ErrLease = errors.New("extraction lease no longer owned")
 
@@ -73,41 +365,76 @@ func (q PostgresQueue) Complete(ctx context.Context, t Task, p Proposal) error {
 	}
 	var productID *string
 	status := "blocked"
-	// A manager-resolved post reuses catalog identities; it must not materialize
-	// a competing draft when an already-running extraction settles.
-	if p.Outcome == "product" && mappingRevision == 0 {
-		id := platform.ID()
-		productID = &id
+	matchStatus := "none"
+	var matchEvidenceRaw []byte
+
+	if mappingRevision > 0 {
 		status = "completed"
-		value := func(f Field) string {
-			if f.State == "known" {
-				return f.Values[0]
-			}
-			return ""
+		matchStatus = "matched"
+		evidence := &MatchEvidence{
+			Reason:  "manager_mapping",
+			Summary: "ارتباط از تصمیم قبلی مدیر حفظ شد.",
+			Policy:  p.Policy,
+			Model:   p.Model,
 		}
-		name := value(p.Name)
-		var code *string
-		var price *int64
-		// Codes remain proposals until a human saves them, avoiding collisions with
-		// existing catalog identities (matching/linking is a separate ticket).
-		if p.Price.State == "known" {
-			n, _ := strconv.ParseInt(p.Price.Values[0], 10, 64)
-			price = &n
-		}
-		attrs := map[string]string{}
-		for k, f := range p.Attributes {
-			if f.State == "known" {
-				attrs[k] = value(f)
-			}
-		}
-		variant := map[string]any{"id": platform.ID(), "name": name, "code": code, "price": price, "attributes": attrs}
-		variants, _ := json.Marshal([]any{variant})
-		if _, err = tx.Exec(ctx, `INSERT INTO catalog.products(id,store_id,name,status,revision,variants) VALUES($1,$2,$3,'draft',1,$4)`, id, store, name, variants); err != nil {
+		matchEvidenceRaw, _ = json.Marshal(evidence)
+	} else if p.Outcome == "product" {
+		mStatus, evidence, targets, err := matchPost(ctx, tx, store, t.Caption, p)
+		if err != nil {
 			return err
 		}
-		snapshot, _ := json.Marshal(map[string]any{"id": id, "name": name, "status": "draft", "revision": 1, "variants": []any{variant}})
-		if _, err = tx.Exec(ctx, `INSERT INTO catalog.history(product_id,revision,actor_id,snapshot) VALUES($1,1,$2,$3)`, id, actor, snapshot); err != nil {
-			return err
+		matchStatus = mStatus
+		if evidence != nil {
+			matchEvidenceRaw, _ = json.Marshal(evidence)
+		}
+
+		if matchStatus == "matched" && len(targets) > 0 {
+			status = "completed"
+			targetsJSON, _ := json.Marshal(targets)
+			rev := 1
+			if _, err = tx.Exec(ctx, `UPDATE catalog.post_selections SET mapping_revision=$2,mapping_not_product=false,mapping_targets=$3 WHERE id=$1`, t.SourceID, rev, targetsJSON); err != nil {
+				return err
+			}
+			snapshot, _ := json.Marshal(map[string]any{
+				"revision":   rev,
+				"notProduct": false,
+				"targets":    targets,
+			})
+			if _, err = tx.Exec(ctx, `INSERT INTO catalog.post_mapping_changes(selection_id,revision,actor_id,source,snapshot) VALUES($1,$2,$3,'system',$4)`, t.SourceID, rev, actor, snapshot); err != nil {
+				return err
+			}
+		} else {
+			status = "completed"
+			id := platform.ID()
+			productID = &id
+			value := func(f Field) string {
+				if f.State == "known" {
+					return f.Values[0]
+				}
+				return ""
+			}
+			name := value(p.Name)
+			var code *string
+			var price *int64
+			if p.Price.State == "known" {
+				n, _ := strconv.ParseInt(p.Price.Values[0], 10, 64)
+				price = &n
+			}
+			attrs := map[string]string{}
+			for k, f := range p.Attributes {
+				if f.State == "known" {
+					attrs[k] = value(f)
+				}
+			}
+			variant := map[string]any{"id": platform.ID(), "name": name, "code": code, "price": price, "attributes": attrs}
+			variants, _ := json.Marshal([]any{variant})
+			if _, err = tx.Exec(ctx, `INSERT INTO catalog.products(id,store_id,name,status,revision,variants) VALUES($1,$2,$3,'draft',1,$4)`, id, store, name, variants); err != nil {
+				return err
+			}
+			snapshot, _ := json.Marshal(map[string]any{"id": id, "name": name, "status": "draft", "revision": 1, "variants": []any{variant}})
+			if _, err = tx.Exec(ctx, `INSERT INTO catalog.history(product_id,revision,actor_id,snapshot) VALUES($1,1,$2,$3)`, id, actor, snapshot); err != nil {
+				return err
+			}
 		}
 	}
 	reason := p.Outcome
@@ -115,7 +442,7 @@ func (q PostgresQueue) Complete(ctx context.Context, t Task, p Proposal) error {
 		status, reason = "completed", "manager_mapping"
 	}
 	raw, _ := json.Marshal(p)
-	if _, err = tx.Exec(ctx, `UPDATE catalog.post_selections SET status=$2,product_id=$3,proposal=$4 WHERE id=$1`, t.SourceID, status, productID, raw); err != nil {
+	if _, err = tx.Exec(ctx, `UPDATE catalog.post_selections SET status=$2,product_id=$3,proposal=$4,match_status=$5,match_evidence=$6 WHERE id=$1`, t.SourceID, status, productID, raw, matchStatus, matchEvidenceRaw); err != nil {
 		return err
 	}
 	if _, err = tx.Exec(ctx, `UPDATE catalog.extraction_jobs SET lease_token=NULL,lease_until=NULL,reason=$2 WHERE selection_id=$1`, t.SourceID, reason); err != nil {
